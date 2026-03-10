@@ -102,6 +102,17 @@
       border-radius: 18px 18px 18px 4px;
     }
     
+    .message-time {
+      font-size: 11px;
+      opacity: 0.7;
+      margin-top: 4px;
+      text-align: right;
+    }
+    
+    .message.ai .message-time {
+      text-align: left;
+    }
+    
     .input-area {
       padding: 20px;
       background: rgba(255, 255, 255, 0.1);
@@ -148,36 +159,30 @@
     .typing {
       font-style: italic;
       opacity: 0.7;
-      font-size: 12px;
-      margin-top: 5px;
-    }
-    
-    .system-message {
-      text-align: center;
-      color: rgba(255, 255, 255, 0.8);
-      font-size: 12px;
-      margin: 10px 0;
     }
   </style>
 </head>
 <body>
   <div class="header">
     <h1>🐶 dogeAgent</h1>
-    <div class="status" id="statusEl">
+    <div class="status">
       <span class="status-dot" id="statusDot"></span>
       <span id="statusText">连接中...</span>
     </div>
   </div>
   
   <div class="chat-container" id="chatContainer">
-    <div class="system-message" id="systemMessage">正在连接到 DogeAgent...</div>
+    <div class="message ai">
+      <div>汪！我已经准备好了，可以开始聊天啦！</div>
+      <div class="message-time" id="initialTime"></div>
+    </div>
   </div>
   
   <div class="input-area">
-    <input type="text" id="userInput" placeholder="和小狗说说话..." onkeypress="handleKeyPress(event)" disabled>
-    <button id="sendBtn" onclick="sendMessage()" disabled>➤</button>
+    <input type="text" id="userInput" placeholder="输入消息..." />
+    <button id="sendBtn">➤</button>
   </div>
-  
+
   <script>
     const { ipcRenderer } = require('electron');
     const chatContainer = document.getElementById('chatContainer');
@@ -185,130 +190,95 @@
     const sendBtn = document.getElementById('sendBtn');
     const statusDot = document.getElementById('statusDot');
     const statusText = document.getElementById('statusText');
-    const systemMessage = document.getElementById('systemMessage');
+    const initialTime = document.getElementById('initialTime');
     
-    let isConnected = false;
-    let pythonReady = false;
+    // 设置初始时间
+    initialTime.textContent = formatTime(new Date());
     
-    // 更新连接状态
-    function updateConnectionStatus(connected, message) {
-      isConnected = connected;
-      pythonReady = connected;
+    // 格式化时间
+    function formatTime(date) {
+      const hours = date.getHours().toString().padStart(2, '0');
+      const minutes = date.getMinutes().toString().padStart(2, '0');
+      return `${hours}:${minutes}`;
+    }
+    
+    // 添加消息到聊天
+    function addMessage(text, isUser = false) {
+      const messageDiv = document.createElement('div');
+      messageDiv.className = `message ${isUser ? 'user' : 'ai'}`;
       
-      if (connected) {
-        statusDot.className = 'status-dot connected';
-        statusText.textContent = message || '已连接';
-        userInput.disabled = false;
-        sendBtn.disabled = false;
-        systemMessage.style.display = 'none';
-      } else {
-        statusDot.className = 'status-dot disconnected';
-        statusText.textContent = message || '未连接';
-        userInput.disabled = true;
-        sendBtn.disabled = true;
-      }
+      const contentDiv = document.createElement('div');
+      contentDiv.textContent = text;
+      
+      const timeDiv = document.createElement('div');
+      timeDiv.className = 'message-time';
+      timeDiv.textContent = formatTime(new Date());
+      
+      messageDiv.appendChild(contentDiv);
+      messageDiv.appendChild(timeDiv);
+      chatContainer.appendChild(messageDiv);
+      
+      // 滚动到底部
+      chatContainer.scrollTop = chatContainer.scrollHeight;
     }
     
     // 发送消息
     function sendMessage() {
-      const text = userInput.value.trim();
-      if (!text || !pythonReady) return;
-      
-      // 添加用户消息
-      addMessage(text, 'user');
-      userInput.value = '';
-      
-      // 发送到 Python
-      ipcRenderer.send('send-to-python', {
-        type: 'chat',
-        payload: { message: text }
-      });
-      
-      // 显示思考中
-      showTyping();
-    }
-    
-    // 添加消息到聊天框
-    function addMessage(text, type) {
-      const div = document.createElement('div');
-      div.className = `message ${type}`;
-      div.textContent = text;
-      chatContainer.appendChild(div);
-      chatContainer.scrollTop = chatContainer.scrollHeight;
-    }
-    
-    // 显示思考中
-    function showTyping() {
-      removeTyping();
-      const typing = document.createElement('div');
-      typing.className = 'typing';
-      typing.id = 'typing';
-      typing.textContent = 'Doge 正在思考...';
-      chatContainer.appendChild(typing);
-      chatContainer.scrollTop = chatContainer.scrollHeight;
-    }
-    
-    // 移除思考提示
-    function removeTyping() {
-      const typing = document.getElementById('typing');
-      if (typing) typing.remove();
-    }
-    
-    // 处理按键
-    function handleKeyPress(event) {
-      if (event.key === 'Enter') {
-        sendMessage();
-      }
-    }
-    
-    // 监听 Python 响应（从主进程转发）
-    ipcRenderer.on('python-message', (event, message) => {
-      console.log('Chat received python-message:', message);
-      
-      if (message.type === 'ready') {
-        updateConnectionStatus(true, '已连接');
-        addMessage('汪！我已经准备好了，可以开始聊天啦！', 'ai');
-      }
-      
-      if (message.type === 'chat_response') {
-        removeTyping();
-        const data = message.data;
+      const message = userInput.value.trim();
+      if (message) {
+        // 添加用户消息
+        addMessage(message, true);
         
+        // 发送到 Python
+        ipcRenderer.send('send-to-python', {
+          type: 'chat',
+          payload: {
+            message: message,
+            history: []
+          }
+        });
+        
+        userInput.value = '';
+      }
+    }
+    
+    // 监听 Python 响应
+    ipcRenderer.on('python-message', (event, message) => {
+      if (message.type === 'chat_response') {
+        const data = message.data;
         if (data.status === 'success') {
-          addMessage(data.message, 'ai');
+          addMessage(data.response, false);
         } else {
-          addMessage('出错了：' + (data.message || '未知错误'), 'ai');
+          addMessage('汪...出错了：' + data.message, false);
         }
       }
-      
-      if (message.type === 'error') {
-        updateConnectionStatus(false, '连接错误');
-        addMessage('系统错误：' + (message.data?.message || '未知错误'), 'ai');
-      }
     });
     
-    // 监听连接状态
+    // 连接状态
     ipcRenderer.on('connection-status', (event, status) => {
-      console.log('Connection status:', status);
       if (status === 'connected') {
-        updateConnectionStatus(true, '已连接');
+        statusDot.className = 'status-dot connected';
+        statusText.textContent = '已连接';
       } else if (status === 'disconnected') {
-        updateConnectionStatus(false, '未连接');
-      } else if (status === 'connecting') {
-        updateConnectionStatus(false, '连接中...');
+        statusDot.className = 'status-dot disconnected';
+        statusText.textContent = '未连接';
+      } else {
+        statusDot.className = 'status-dot';
+        statusText.textContent = '连接中...';
       }
     });
     
-    // 初始化 - 请求连接状态
-    setTimeout(() => {
-      if (!isConnected) {
-        updateConnectionStatus(false, '未连接');
-        systemMessage.textContent = '⚠️ 无法连接到 DogeAgent 后端，请检查 Python 服务是否运行';
-        systemMessage.style.display = 'block';
-      }
-    }, 5000);
+    // 发送按钮
+    sendBtn.addEventListener('click', sendMessage);
     
-    console.log('Chat window initialized');
+    // 回车发送
+    userInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        sendMessage();
+      }
+    });
+    
+    console.log('dogeAgent 聊天窗口已启动！');
   </script>
 </body>
 </html>
