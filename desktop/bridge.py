@@ -9,7 +9,7 @@ import logging
 import io
 import codecs
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List, Tuple
 from dotenv import load_dotenv
 
 # 强制设置标准输出为 UTF-8
@@ -118,9 +118,16 @@ class BridgeService:
             # 保存用户消息
             session_store.add_message("human", message, self.user_id)
             
-            # 获取历史
-            history_data = session_store.get_history(self.user_id, limit=10)
-            history = [(h["role"], h["content"]) for h in history_data]
+            # 获取历史并转换为元组列表 [(role, content), ...]
+            history_dicts = session_store.get_history(self.user_id, limit=10)
+            # 从字典列表转换为元组列表，只取 role 和 content
+            history: List[Tuple[str, str]] = [
+                (item.get('role', ''), item.get('content', ''))
+                for item in history_dicts
+                if isinstance(item, dict) and 'role' in item and 'content' in item
+            ]
+            
+            logger.debug(f"History converted: {len(history)} items")
             
             # 调用 Agent
             response = self.agent.chat(message, history)
