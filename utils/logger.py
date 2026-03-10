@@ -1,19 +1,20 @@
 """
 日志模块 - 为 dogeAgent 提供统一的日志功能
 支持控制台输出、文件记录、日志轮转
+注意：日志不会污染标准输出，确保 JSON 通信正常
 """
 import os
 import sys
 import logging
-from logging.handlers import RotatingFileHandler, TimedRotatingFileHandler
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Optional
 from datetime import datetime
 
 # 日志格式配置
-CONSOLE_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+CONSOLE_FORMAT = "[%(levelname)s] %(name)s: %(message)s"
 FILE_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(funcName)s:%(lineno)d - %(message)s"
-CONSOLE_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
+CONSOLE_DATE_FORMAT = "%H:%M:%S"
 FILE_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 # 日志级别映射
@@ -29,6 +30,7 @@ class DogeLogger:
     """
     Doge 日志类
     提供统一的日志管理功能
+    注意：日志输出到 stderr，避免污染 stdout（用于 JSON 通信）
     """
     
     _instance = None
@@ -80,7 +82,7 @@ class DogeLogger:
         # 清除已有的处理器
         self.logger.handlers.clear()
         
-        # 添加控制台处理器
+        # 添加控制台处理器（输出到 stderr，避免污染 stdout）
         if self.console_output:
             self._add_console_handler()
         
@@ -91,8 +93,9 @@ class DogeLogger:
         DogeLogger._initialized = True
     
     def _add_console_handler(self):
-        """添加控制台处理器"""
-        console_handler = logging.StreamHandler(sys.stdout)
+        """添加控制台处理器（输出到 stderr）"""
+        # 重要：输出到 stderr，避免影响 stdout 的 JSON 通信
+        console_handler = logging.StreamHandler(sys.stderr)
         console_handler.setLevel(self.level)
         
         # 设置格式
@@ -109,8 +112,8 @@ class DogeLogger:
         # 创建日志目录
         self.log_dir.mkdir(parents=True, exist_ok=True)
         
-        # 生成日志文件名
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # 生成日志文件名（按日期）
+        timestamp = datetime.now().strftime("%Y%m%d")
         log_file = self.log_dir / f"{self.name}_{timestamp}.log"
         
         # 创建轮转文件处理器
@@ -140,7 +143,7 @@ class DogeLogger:
         
         Args:
             name: 子日志器名称后缀
-        
+    
         Returns:
             logging.Logger 实例
         """
