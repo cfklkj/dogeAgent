@@ -6,6 +6,7 @@ from typing import Optional, Dict, Any, List, Tuple
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langchain_nvidia_ai_endpoints import ChatNVIDIA
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.tools import tool
 from config.settings import (
     NVIDIA_API_KEY, 
     NVIDIA_BASE_URL, 
@@ -13,9 +14,20 @@ from config.settings import (
     DEFAULT_MODEL_PROVIDER
 )
 from models.config import MODEL_CONFIG
-from tools import get_all_tools
+from tools.tool_registry import get_all_tools
 
 logger = logging.getLogger(__name__)
+
+# 系统提示词 - 包含工具使用说明
+SYSTEM_PROMPT = """你是一只可爱的柴犬宠物助手，名字叫 Doge。
+你友好、活泼、聪明，喜欢帮助用户。
+你的回答应该简洁、有趣，偶尔带点狗狗的可爱语气。
+
+你有查询天气的能力！当用户问天气时，使用工具查询并回复。
+如果用户问"今天天气怎么样"、"天气如何"等问题，使用天气工具查询。
+
+如果不知道答案，诚实地告诉用户。
+"""
 
 class AgentFactory:
     """Agent 工厂类"""
@@ -24,11 +36,7 @@ class AgentFactory:
         self.provider = provider or DEFAULT_MODEL_PROVIDER
         self.llm = None
         self.tools = get_all_tools()
-        self.system_prompt = """你是一只可爱的柴犬宠物助手，名字叫 Doge。
-你友好、活泼、聪明，喜欢帮助用户。
-你的回答应该简洁、有趣，偶尔带点狗狗的可爱语气。
-你会使用各种工具来帮助用户解决问题。
-如果不知道答案，诚实地告诉用户。"""
+        self.system_prompt = SYSTEM_PROMPT
         self._init_llm()
     
     def _init_llm(self):
@@ -46,6 +54,9 @@ class AgentFactory:
                     temperature=0.7,
                     max_tokens=2048,
                 )
+                # 如果有工具，使用 bind_tools
+                if self.tools:
+                    self.llm = self.llm.bind_tools(self.tools)
                 logger.info(f"NVIDIA LLM 初始化成功：{MODEL_CONFIG['nvidia']['model']}")
                 
             elif self.provider == "google":

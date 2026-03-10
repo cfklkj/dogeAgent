@@ -1,35 +1,44 @@
 """
-工具注册表
+工具注册表 - 管理所有可用工具
 """
-from typing import Dict, Callable, Any, List
+import logging
+from typing import List, Dict, Any, Optional
+from langchain_core.tools import tool
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 
-class ToolRegistry:
-    """工具注册表"""
-    
-    def __init__(self):
-        self._tools: Dict[str, Dict[str, Any]] = {}
-    
-    def register(self, name: str, func: Callable, description: str):
-        """注册工具"""
-        self._tools[name] = {
-            "func": func,
-            "description": description,
-            "name": name
-        }
-    
-    def get(self, name: str) -> Callable:
-        """获取工具函数"""
-        if name in self._tools:
-            return self._tools[name]["func"]
-        raise KeyError(f"工具不存在：{name}")
-    
-    def get_all(self) -> List[Dict[str, Any]]:
-        """获取所有工具"""
-        return list(self._tools.values())
-    
-    def get_names(self) -> List[str]:
-        """获取所有工具名称"""
-        return list(self._tools.keys())
+logger = logging.getLogger(__name__)
 
-# 全局工具注册表
-registry = ToolRegistry()
+# 工具描述
+TOOLS_DESCRIPTION = """
+可用工具：
+- weather: 查询指定城市的实时天气
+"""
+
+@tool
+def get_weather(location: str) -> str:
+    """
+    查询指定城市的实时天气
+    
+    Args:
+        location: 城市名称，如 "北京"、"上海"
+    
+    Returns:
+        格式化的天气信息
+    """
+    try:
+        from tools.weather_tool import get_weather_sync
+        return get_weather_sync(location)
+    except Exception as e:
+        logger.error(f"天气查询失败：{e}")
+        return f"天气查询失败：{str(e)}"
+
+# 工具列表
+ALL_TOOLS = [get_weather]
+
+def get_all_tools():
+    """获取所有可用工具"""
+    return ALL_TOOLS
+
+def get_tools_description():
+    """获取工具描述"""
+    return TOOLS_DESCRIPTION
