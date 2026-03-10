@@ -17,6 +17,27 @@ if sys.platform == 'win32':
     sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer)
     sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer)
 
+def clean_text(text: str) -> str:
+    """
+    清理文本中的无效 UTF-8 字符（如 UTF-16 代理对）
+    """
+    if not text:
+        return ""
+    try:
+        # 尝试编码为 UTF-8，如果有代理对会失败
+        text.encode('utf-8')
+        return text
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        # 使用 'surrogatepass' 处理代理对，然后替换为空白
+        cleaned = text.encode('utf-8', errors='surrogatepass').decode('utf-8', errors='surrogatepass')
+        # 再次尝试清理
+        try:
+            cleaned.encode('utf-8')
+            return cleaned
+        except:
+            # 如果还是失败，替换所有无效字符
+            return text.encode('utf-8', errors='replace').decode('utf-8', errors='replace')
+
 # 添加项目根目录到 Python 路径
 project_root = Path(__file__).parent.parent
 if str(project_root) not in sys.path:
@@ -36,7 +57,8 @@ class UTF8StreamHandler(logging.StreamHandler):
         try:
             msg = self.format(record)
             stream = self.stream
-            # 使用 UTF-8 编码，错误替换
+            # 清理无效字符
+            msg = clean_text(msg)
             stream.write(msg + self.terminator)
             self.flush()
         except (KeyboardInterrupt, SystemExit):
@@ -104,6 +126,10 @@ class BridgeService:
         Returns:
             回复字典
         """
+        # 清理输入消息
+        message = clean_text(message)
+        logger.info(f"Received chat message: {message[:30]}...")
+        
         # 如果未初始化，先初始化
         if not self.agent:
             logger.info("Agent not initialized, attempting auto-initialization...")
@@ -120,9 +146,9 @@ class BridgeService:
             
             # 获取历史并转换为元组列表 [(role, content), ...]
             history_dicts = session_store.get_history(self.user_id, limit=10)
-            # 从字典列表转换为元组列表，只取 role 和 content
+            # 从字典列表转换为元组列表，只取 role 和 content，并清理无效字符
             history: List[Tuple[str, str]] = [
-                (item.get('role', ''), item.get('content', ''))
+                (clean_text(item.get('role', '')), clean_text(item.get('content', '')))
                 for item in history_dicts
                 if isinstance(item, dict) and 'role' in item and 'content' in item
             ]
@@ -131,6 +157,9 @@ class BridgeService:
             
             # 调用 Agent
             response = self.agent.chat(message, history)
+            
+            # 清理 AI 回复
+            response = clean_text(response)
             
             # 保存 AI 回复
             session_store.add_message("ai", response, self.user_id)
