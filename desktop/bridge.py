@@ -5,9 +5,14 @@ import sys
 import os
 import json
 import logging
+import io
 from pathlib import Path
 from typing import Optional, Dict, Any
 from dotenv import load_dotenv
+
+# 强制设置标准输出为 UTF-8
+sys.stdout = io.TextWriterWrapper(sys.stdout, encoding='utf-8')
+sys.stderr = io.TextWriterWrapper(sys.stderr, encoding='utf-8')
 
 # 添加项目根目录到 Python 路径
 project_root = Path(__file__).parent.parent
@@ -21,12 +26,43 @@ load_dotenv(project_root / '.env')
 from agent.factory import get_agent, reset_agent
 from storage.session_store import session_store
 
-# 配置日志
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+# 配置日志 - 使用 UTF-8 编码
+class UTF8StreamHandler(logging.StreamHandler):
+    """UTF-8 编码的日志处理器"""
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            stream = self.stream
+            stream.write(msg + self.terminator)
+            self.flush()
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except Exception:
+            self.handleError(record)
+
+# 设置日志
 logger = logging.getLogger("bridge")
+logger.setLevel(logging.INFO)
+
+# 清除现有处理器
+logger.handlers.clear()
+
+# 添加 UTF-8 处理器
+handler = UTF8StreamHandler()
+handler.setFormatter(logging.Formatter(
+    '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+))
+logger.addHandler(handler)
+
+# 也设置根日志
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.INFO)
+root_logger.handlers.clear()
+root_handler = UTF8StreamHandler()
+root_handler.setFormatter(logging.Formatter(
+    '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+))
+root_logger.addHandler(root_handler)
 
 class BridgeService:
     """桥接服务"""
@@ -129,7 +165,7 @@ def main():
     logger.info("Bridge Service 启动")
     
     # 发送启动消息
-    print(json.dumps({"type": "ready", "message": "Bridge Service 已就绪"}))
+    print(json.dumps({"type": "ready", "message": "Bridge Service 已就绪"}, ensure_ascii=False))
     sys.stdout.flush()
     
     # 主循环
@@ -161,7 +197,7 @@ def main():
             else:
                 result = {"status": "error", "message": f"未知消息类型：{msg_type}"}
             
-            # 返回结果
+            # 返回结果 - 使用 ensure_ascii=False 保留中文
             response = {
                 "type": f"{msg_type}_response",
                 "data": result
