@@ -160,22 +160,37 @@
       font-style: italic;
       opacity: 0.7;
     }
+    
+    .clear-btn {
+      padding: 8px 16px;
+      background: rgba(255, 255, 255, 0.2);
+      border: none;
+      border-radius: 8px;
+      color: white;
+      cursor: pointer;
+      font-size: 12px;
+      transition: background 0.2s;
+    }
+    
+    .clear-btn:hover {
+      background: rgba(255, 255, 255, 0.3);
+    }
   </style>
 </head>
 <body>
   <div class="header">
     <h1>🐶 dogeAgent</h1>
-    <div class="status">
-      <span class="status-dot" id="statusDot"></span>
-      <span id="statusText">连接中...</span>
+    <div style="display: flex; gap: 10px; align-items: center;">
+      <button class="clear-btn" id="clearBtn" title="清空聊天记录">🗑️ 清空</button>
+      <div class="status">
+        <span class="status-dot" id="statusDot"></span>
+        <span id="statusText">连接中...</span>
+      </div>
     </div>
   </div>
   
   <div class="chat-container" id="chatContainer">
-    <div class="message ai">
-      <div>汪！我已经准备好了，可以开始聊天啦！</div>
-      <div class="message-time" id="initialTime"></div>
-    </div>
+    <!-- 消息会动态添加到这里 -->
   </div>
   
   <div class="input-area">
@@ -190,10 +205,13 @@
     const sendBtn = document.getElementById('sendBtn');
     const statusDot = document.getElementById('statusDot');
     const statusText = document.getElementById('statusText');
-    const initialTime = document.getElementById('initialTime');
+    const clearBtn = document.getElementById('clearBtn');
     
-    // 设置初始时间
-    initialTime.textContent = formatTime(new Date());
+    // 聊天历史存储键名
+    const CHAT_HISTORY_KEY = 'doge_chat_history';
+    
+    // 聊天历史
+    let chatHistory = [];
     
     // 格式化时间
     function formatTime(date) {
@@ -202,8 +220,53 @@
       return `${hours}:${minutes}`;
     }
     
+    // 保存聊天历史到 localStorage
+    function saveHistory() {
+      try {
+        localStorage.setItem(CHAT_HISTORY_KEY, JSON.stringify(chatHistory));
+      } catch (e) {
+        console.error('保存聊天历史失败:', e);
+      }
+    }
+    
+    // 从 localStorage 加载聊天历史
+    function loadHistory() {
+      try {
+        const saved = localStorage.getItem(CHAT_HISTORY_KEY);
+        if (saved) {
+          chatHistory = JSON.parse(saved);
+          console.log(`加载了 ${chatHistory.length} 条聊天记录`);
+          // 重新渲染历史消息
+          chatHistory.forEach(msg => {
+            addMessageToDOM(msg.text, msg.isUser, msg.time, false);
+          });
+        } else {
+          // 没有历史记录，添加欢迎消息
+          const welcomeMsg = {
+            text: '汪！我已经准备好了，可以开始聊天啦！',
+            isUser: false,
+            time: new Date().toISOString()
+          };
+          chatHistory.push(welcomeMsg);
+          addMessageToDOM(welcomeMsg.text, welcomeMsg.isUser, welcomeMsg.time);
+          saveHistory();
+        }
+      } catch (e) {
+        console.error('加载聊天历史失败:', e);
+      }
+    }
+    
     // 添加消息到聊天
     function addMessage(text, isUser = false) {
+      const time = new Date().toISOString();
+      const msg = { text, isUser, time };
+      chatHistory.push(msg);
+      addMessageToDOM(text, isUser, time);
+      saveHistory();
+    }
+    
+    // 添加消息到 DOM
+    function addMessageToDOM(text, isUser, timeISO, shouldSave = true) {
       const messageDiv = document.createElement('div');
       messageDiv.className = `message ${isUser ? 'user' : 'ai'}`;
       
@@ -212,7 +275,8 @@
       
       const timeDiv = document.createElement('div');
       timeDiv.className = 'message-time';
-      timeDiv.textContent = formatTime(new Date());
+      const date = new Date(timeISO);
+      timeDiv.textContent = formatTime(date);
       
       messageDiv.appendChild(contentDiv);
       messageDiv.appendChild(timeDiv);
@@ -220,6 +284,24 @@
       
       // 滚动到底部
       chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+    
+    // 清空聊天历史
+    function clearHistory() {
+      if (confirm('确定要清空所有聊天记录吗？')) {
+        chatHistory = [];
+        localStorage.removeItem(CHAT_HISTORY_KEY);
+        chatContainer.innerHTML = '';
+        // 添加新的欢迎消息
+        const welcomeMsg = {
+          text: '汪！聊天记录已清空，我们重新开始吧！',
+          isUser: false,
+          time: new Date().toISOString()
+        };
+        chatHistory.push(welcomeMsg);
+        addMessageToDOM(welcomeMsg.text, welcomeMsg.isUser, welcomeMsg.time);
+        saveHistory();
+      }
     }
     
     // 发送消息
@@ -234,7 +316,10 @@
           type: 'chat',
           payload: {
             message: message,
-            history: []
+            history: chatHistory.slice(-10).map(m => ({
+              role: m.isUser ? 'human' : 'ai',
+              content: m.text
+            }))
           }
         });
         
@@ -277,6 +362,12 @@
         sendMessage();
       }
     });
+    
+    // 清空按钮
+    clearBtn.addEventListener('click', clearHistory);
+    
+    // 窗口加载时加载历史记录
+    loadHistory();
     
     console.log('dogeAgent 聊天窗口已启动！');
   </script>
