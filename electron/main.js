@@ -147,7 +147,14 @@ function createMainWindow() {
   mainWindow.loadFile(path.join(__dirname, 'pet.html'));
   mainWindow.setAlwaysOnTop(true, 'screen-saver');
   
+  // 监听打开聊天窗口的请求
+  ipcMain.on('open-chat', () => {
+    console.log('open-chat 请求收到');
+    createChatWindow();
+  });
+  
   mainWindow.on('double-click', () => {
+    console.log('主窗口双击事件');
     if (!chatWindow || chatWindow.isDestroyed()) {
       createChatWindow();
     } else {
@@ -163,10 +170,12 @@ function createMainWindow() {
 // 创建聊天窗口
 function createChatWindow() {
   if (chatWindow && !chatWindow.isDestroyed()) {
+    console.log('聊天窗口已存在，聚焦');
     chatWindow.focus();
     return;
   }
   
+  console.log('创建新的聊天窗口');
   chatWindow = new BrowserWindow({
     width: 500,
     height: 600,
@@ -191,6 +200,7 @@ function createChatWindow() {
   });
   
   chatWindow.on('closed', () => {
+    console.log('聊天窗口已关闭');
     chatWindow = null;
   });
 }
