@@ -22,10 +22,16 @@ from utils.logger import get_doge_logger, create_module_logger
 # 初始化日志
 logger = create_module_logger("bridge")
 
-# 强制设置标准输出为 UTF-8
+# ============================================================================
+# 关键修复：强制设置标准输出为 UTF-8
+# Windows 默认 GBK 编码会导致中文和 emoji 乱码
+# ============================================================================
 if sys.platform == 'win32':
-    sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer)
-    sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer)
+    # 重新编码 stdout 和 stderr 为 UTF-8
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', line_buffering=True)
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', line_buffering=True)
+    # 设置环境变量
+    os.environ['PYTHONIOENCODING'] = 'utf-8'
 
 def clean_text(text: str) -> str:
     """
@@ -67,15 +73,7 @@ class BridgeService:
         logger.info("Bridge Service initialized")
     
     def init_agent(self, provider: str = None) -> Dict[str, Any]:
-        """
-        初始化 Agent
-        
-        Args:
-            provider: 模型提供商
-        
-        Returns:
-            初始化结果
-        """
+        """初始化 Agent"""
         try:
             logger.info(f"Starting to initialize Agent, provider: {provider}")
             self.provider = provider
@@ -93,16 +91,7 @@ class BridgeService:
             }
     
     def chat(self, message: str, history: List[Tuple[str, str]] = None) -> Dict[str, Any]:
-        """
-        与 Agent 对话
-        
-        Args:
-            message: 用户消息
-            history: 历史对话记录
-        
-        Returns:
-            对话结果
-        """
+        """与 Agent 对话"""
         try:
             if not self.agent:
                 logger.warning("Agent not initialized, auto-initializing...")
@@ -124,15 +113,7 @@ class BridgeService:
             }
     
     def switch_provider(self, provider: str) -> Dict[str, Any]:
-        """
-        切换模型提供商
-        
-        Args:
-            provider: 新的提供商
-        
-        Returns:
-            切换结果
-        """
+        """切换模型提供商"""
         try:
             if not self.agent:
                 return {
@@ -162,27 +143,18 @@ class BridgeService:
             }
 
 def send_response(response: Dict[str, Any]):
-    """
-    发送响应到 Electron
-    
-    Args:
-        response: 响应数据
-    """
+    """发送响应到 Electron"""
     try:
+        # 确保使用 UTF-8 编码
         json_str = json.dumps(response, ensure_ascii=False)
         logger.debug(f"Sending response: {json_str[:100]}...")
+        # 直接输出 UTF-8 字符串
         print(json_str, flush=True)
     except Exception as e:
         logger.error(f"Failed to send response: {e}", exc_info=True)
 
 def process_message(service: BridgeService, message: Dict[str, Any]):
-    """
-    处理接收到的消息
-    
-    Args:
-        service: BridgeService 实例
-        message: 消息内容
-    """
+    """处理接收到的消息"""
     try:
         msg_type = message.get("type")
         logger.info(f"Received message type: {msg_type}")
