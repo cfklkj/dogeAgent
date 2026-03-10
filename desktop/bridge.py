@@ -2,9 +2,18 @@
 桥接服务 - Electron 与 Python 之间的通信
 """
 import sys
+import os
 import json
 import logging
+from pathlib import Path
 from typing import Optional, Dict, Any
+
+# 添加项目根目录到 Python 路径
+project_root = Path(__file__).parent.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
+# 现在可以正确导入项目模块
 from agent.factory import get_agent, reset_agent
 from storage.session_store import session_store
 
