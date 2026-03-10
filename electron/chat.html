@@ -400,10 +400,9 @@
     // 聊天历史
     let chatHistory = [];
     
-    // 状态轮询
-    let statusPolling = null;
-    let lastStatusTime = null;
+    // 状态追踪
     let lastKnownStatus = 'initializing';
+    let statusPolling = null;
     
     // 格式化时间
     function formatTime(date) {
@@ -469,28 +468,6 @@
       }
       
       lastKnownStatus = status || 'disconnected';
-    }
-    
-    // 获取 Agent 状态
-    function fetchAgentStatus() {
-      try {
-        ipcRenderer.send('send-to-python', {
-          type: 'get_status',
-          payload: {}
-        });
-      } catch (e) {
-        console.error('获取状态失败:', e);
-      }
-    }
-    
-    // 开始轮询状态
-    function startStatusPolling() {
-      console.log('开始轮询 Agent 状态');
-      fetchAgentStatus();
-      if (statusPolling) {
-        clearInterval(statusPolling);
-      }
-      statusPolling = setInterval(fetchAgentStatus, 3000); // 每 3 秒更新一次
     }
     
     // 保存聊天历史到 localStorage
@@ -612,8 +589,23 @@
           addMessage('汪...出错了：' + data.message, false);
         }
       } else if (message.type === 'status_response') {
-        // 处理状态响应
+        // 处理状态响应（初始查询）
         console.log('收到状态响应:', message.data);
+        const data = message.data;
+        if (data && data.status === 'success' && data.data) {
+          const statusData = data.data;
+          updateAgentStatus(
+            statusData.status,
+            statusData.provider,
+            statusData.model,
+            statusData.message_count,
+            statusData.error_count,
+            statusData.last_update
+          );
+        }
+      } else if (message.type === 'status_update') {
+        // 处理状态更新推送（事件驱动）
+        console.log('收到状态更新推送:', message.data);
         const data = message.data;
         if (data && data.status === 'success' && data.data) {
           const statusData = data.data;
@@ -635,12 +627,11 @@
       if (status === 'connected') {
         connectionDot.className = 'status-dot ready';
         connectionText.textContent = '已连接';
-        // 开始轮询 Agent 状态
-        startStatusPolling();
+        // 连接成功后不轮询，等待状态更新推送
       } else if (status === 'disconnected') {
         connectionDot.className = 'status-dot disconnected';
         connectionText.textContent = '未连接';
-        // 停止轮询
+        // 停止轮询（如果有的话）
         if (statusPolling) {
           clearInterval(statusPolling);
           statusPolling = null;

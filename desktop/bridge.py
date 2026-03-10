@@ -7,6 +7,7 @@ import os
 import json
 import logging
 import io
+import codecs
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple
 from dotenv import load_dotenv
@@ -39,14 +40,18 @@ def clean_text(text: str) -> str:
     if not text:
         return ""
     try:
+        # 尝试编码为 UTF-8，如果有代理对会失败
         text.encode('utf-8')
         return text
     except (UnicodeEncodeError, UnicodeDecodeError):
+        # 使用 'surrogatepass' 处理代理对，然后替换为空白
         cleaned = text.encode('utf-8', errors='surrogatepass').decode('utf-8', errors='surrogatepass')
+        # 再次尝试清理
         try:
             cleaned.encode('utf-8')
             return cleaned
         except:
+            # 如果还是失败，替换所有无效字符
             return text.encode('utf-8', errors='replace').decode('utf-8', errors='replace')
 
 # 添加项目根目录到 Python 路径
@@ -58,6 +63,7 @@ load_dotenv(project_root / '.env')
 
 # 现在可以正确导入项目模块
 from agent.factory import get_agent, reset_agent
+from agent.status import get_state_manager
 
 class BridgeService:
     """桥接服务类"""
@@ -65,6 +71,7 @@ class BridgeService:
     def __init__(self):
         self.agent = None
         self.provider = None
+        self.last_status = None  # 记录上次发送的状态，避免重复发送
         logger.info("Bridge Service initialized")
     
     def init_agent(self, provider: str = None) -> Dict[str, Any]:
@@ -74,10 +81,6 @@ class BridgeService:
             self.provider = provider
             self.agent = get_agent(provider)
             logger.info("Agent initialized successfully")
-            
-            # 初始化完成后主动推送状态
-            self._push_status_update()
-            
             return {
                 "status": "success",
                 "message": "Agent 初始化成功"
@@ -99,9 +102,6 @@ class BridgeService:
             logger.info(f"Processing message: {message[:50]}...")
             response = self.agent.chat(message, history)
             logger.info(f"Response generated: {response[:50]}...")
-            
-            # 聊天后推送状态更新
-            self._push_status_update()
             
             return {
                 "status": "success",
@@ -128,7 +128,6 @@ class BridgeService:
             
             if success:
                 logger.info(f"Provider switched to: {provider}")
-                self._push_status_update()
                 return {
                     "status": "success",
                     "message": f"已切换到 {provider}"
@@ -148,11 +147,26 @@ class BridgeService:
     def get_status(self) -> Dict[str, Any]:
         """获取 Agent 状态"""
         try:
-            from agent.status import get_state_manager
             state = get_state_manager()
+            status_dict = state.get_status_dict()
+            
+            # 检查状态是否变化，避免重复发送
+            current_status = status_dict.get('status')
+            if current_status != self.last_status:
+                self.last_status = current_status
+                logger.debug(f"状态变化：{current_status}")
+                # 主动推送状态更新
+                send_response({
+                    "type": "status_update",
+                    "data": {
+                        "status": "success",
+                        "data": status_dict
+                    }
+                })
+            
             return {
                 "status": "success",
-                "data": state.get_status_dict()
+                "data": status_dict
             }
         except Exception as e:
             logger.error(f"Get status failed: {e}", exc_info=True)
@@ -161,21 +175,35 @@ class BridgeService:
                 "message": f"获取状态失败：{str(e)}"
             }
     
-    def _push_status_update(self):
-        """推送状态更新到前端"""
+    def notify_status_change(self, old_status: str, new_status: str):
+        """
+        当状态变化时主动通知前端
+        
+        Args:
+            old_status: 旧状态
+            new_status: 新状态
+        """
+        logger.info(f"状态变化通知：{old_status} -> {new_status}")
         try:
-            result = self.get_status()
-            if result["status"] == "success":
-                send_response({"type": "status_update", "data": result})
-                logger.debug("Status update pushed")
+            state = get_state_manager()
+            status_dict = state.get_status_dict()
+            send_response({
+                "type": "status_update",
+                "data": {
+                    "status": "success",
+                    "data": status_dict
+                }
+            })
         except Exception as e:
-            logger.error(f"Push status update failed: {e}")
+            logger.error(f"发送状态变化通知失败：{e}")
 
 def send_response(response: Dict[str, Any]):
     """发送响应到 Electron"""
     try:
+        # 确保使用 UTF-8 编码
         json_str = json.dumps(response, ensure_ascii=False)
         logger.debug(f"Sending response: {json_str[:100]}...")
+        # 直接输出 UTF-8 字符串
         print(json_str, flush=True)
     except Exception as e:
         logger.error(f"Failed to send response: {e}", exc_info=True)
@@ -217,7 +245,7 @@ def process_message(service: BridgeService, message: Dict[str, Any]):
         logger.error(f"Error processing message: {e}", exc_info=True)
         send_response({
             "type": "error",
-            "data": {"message": f"处理消息失败：{str(e)}"}
+            "data": {"message": f"处理消息失败：{str(e)}"
         })
 
 def main():
