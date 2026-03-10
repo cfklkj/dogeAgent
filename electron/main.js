@@ -37,9 +37,18 @@ function startPythonBridge() {
             pythonReady = true;
             console.log('Python bridge ready');
             
+            // 自动发送初始化消息
+            console.log('Sending init message to Python...');
+            setTimeout(() => {
+              sendToPython({ type: 'init', payload: {} });
+            }, 500);
+            
             // 通知所有窗口
             if (chatWindow && !chatWindow.isDestroyed()) {
               chatWindow.webContents.send('connection-status', 'connected');
+            }
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('connection-status', 'connected');
             }
           }
           
@@ -90,8 +99,8 @@ function startPythonBridge() {
 
 // 发送消息到 Python
 function sendToPython(message) {
-  if (!pythonProcess || !pythonReady) {
-    console.log('Python not ready, queueing message:', message);
+  if (!pythonProcess) {
+    console.log('Python process not started');
     return false;
   }
   

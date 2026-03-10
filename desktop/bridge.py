@@ -7,11 +7,15 @@ import json
 import logging
 from pathlib import Path
 from typing import Optional, Dict, Any
+from dotenv import load_dotenv
 
 # 添加项目根目录到 Python 路径
 project_root = Path(__file__).parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
+
+# 加载环境变量
+load_dotenv(project_root / '.env')
 
 # 现在可以正确导入项目模块
 from agent.factory import get_agent, reset_agent
@@ -30,16 +34,24 @@ class BridgeService:
     def __init__(self):
         self.agent = None
         self.user_id = "default"
+        self._initialized = False
     
-    def init_agent(self, provider: str = None):
+    def init_agent(self, provider: str = None) -> Dict[str, Any]:
         """初始化 Agent"""
+        if self._initialized:
+            return {"status": "success", "message": "Agent 已初始化"}
+        
         try:
+            logger.info(f"开始初始化 Agent, provider: {provider or 'default'}")
             self.agent = get_agent(provider)
+            self._initialized = True
             logger.info(f"Agent 初始化成功，provider: {provider}")
             return {"status": "success", "message": "Agent 初始化成功"}
         except Exception as e:
             logger.error(f"Agent 初始化失败：{e}")
-            return {"status": "error", "message": str(e)}
+            import traceback
+            logger.error(traceback.format_exc())
+            return {"status": "error", "message": f"Agent 初始化失败：{str(e)}"}
     
     def chat(self, message: str) -> Dict[str, Any]:
         """
@@ -51,6 +63,13 @@ class BridgeService:
         Returns:
             回复字典
         """
+        # 如果未初始化，先初始化
+        if not self.agent:
+            logger.info("Agent 未初始化，尝试自动初始化...")
+            init_result = self.init_agent()
+            if init_result.get("status") != "success":
+                return {"status": "error", "message": f"Agent 初始化失败：{init_result.get('message')}"}
+        
         if not self.agent:
             return {"status": "error", "message": "Agent 未初始化"}
         
@@ -76,7 +95,9 @@ class BridgeService:
             
         except Exception as e:
             logger.error(f"对话失败：{e}")
-            return {"status": "error", "message": str(e)}
+            import traceback
+            logger.error(traceback.format_exc())
+            return {"status": "error", "message": f"对话失败：{str(e)}"}
     
     def switch_model(self, provider: str) -> Dict[str, Any]:
         """切换模型"""
