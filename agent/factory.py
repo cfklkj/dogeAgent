@@ -2,13 +2,14 @@
 Agent 工厂 - 创建和管理 LangChain Agent
 """
 import logging
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List, Tuple
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langchain_nvidia_ai_endpoints import ChatNVIDIA
 from langchain_google_genai import ChatGoogleGenerativeAI
-
 from config.settings import (
-    NVIDIA_API_KEY, NVIDIA_BASE_URL, GOOGLE_API_KEY,
+    NVIDIA_API_KEY, 
+    NVIDIA_BASE_URL, 
+    GOOGLE_API_KEY,
     DEFAULT_MODEL_PROVIDER
 )
 from models.config import MODEL_CONFIG
@@ -59,7 +60,6 @@ class AgentFactory:
                     max_output_tokens=2048,
                 )
                 logger.info(f"Google LLM 初始化成功：{MODEL_CONFIG['google']['model']}")
-                
             else:
                 raise ValueError(f"不支持的模型提供商：{self.provider}")
                 
@@ -77,7 +77,7 @@ class AgentFactory:
         self._init_llm()
         return True
     
-    def chat(self, message: str, history: list = None) -> str:
+    def chat(self, message: str, history: List[Tuple[str, str]] = None) -> str:
         """
         与 Agent 对话
         
@@ -92,28 +92,49 @@ class AgentFactory:
             # 构建消息历史
             messages = [SystemMessage(content=self.system_prompt)]
             
+            # 安全地处理历史记录
             if history:
-                for role, content in history:
+                for item in history:
+                    # 确保是有效的元组
+                    if not isinstance(item, (list, tuple)) or len(item) != 2:
+                        logger.warning(f"Invalid history item: {item}")
+                        continue
+                    
+                    role, content = item
+                    
+                    # 确保 content 是字符串且不为空
+                    if not isinstance(content, str) or not content:
+                        logger.warning(f"Invalid content in history: {content}")
+                        continue
+                    
+                    # 确保 role 是有效的
                     if role == "human":
                         messages.append(HumanMessage(content=content))
                     elif role == "ai":
                         messages.append(AIMessage(content=content))
+                    else:
+                        logger.warning(f"Unknown role: {role}")
             
             # 添加当前消息
-            messages.append(HumanMessage(content=message))
+            if message and isinstance(message, str):
+                messages.append(HumanMessage(content=message))
+            else:
+                logger.warning(f"Invalid message: {message}")
+                messages.append(HumanMessage(content=str(message) if message else ""))
             
             # 调用 LLM
+            logger.debug(f"Sending {len(messages)} messages to LLM")
             response = self.llm.invoke(messages)
+            
             return response.content
             
         except Exception as e:
-            logger.error(f"对话失败：{e}")
+            logger.error(f"对话失败：{e}", exc_info=True)
             return f"汪...出错了：{str(e)}"
     
     def get_tools_description(self) -> str:
         """获取工具描述"""
         return "\n".join([f"- {tool.name}: {tool.description}" for tool in self.tools])
-
 
 # 全局 Agent 实例
 _agent_instance: Optional[AgentFactory] = None
