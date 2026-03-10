@@ -29,7 +29,7 @@ logger = create_module_logger("bridge")
 if sys.platform == 'win32':
     # 重新编码 stdout 和 stderr 为 UTF-8
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', line_buffering=True)
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', line_buffering=True)
+    sys.stderr = io.TextIOWWrapper(sys.stderr.buffer, encoding='utf-8', line_buffering=True)
     # 设置环境变量
     os.environ['PYTHONIOENCODING'] = 'utf-8'
 
@@ -141,6 +141,22 @@ class BridgeService:
                 "status": "error",
                 "message": str(e)
             }
+    
+    def get_status(self) -> Dict[str, Any]:
+        """获取 Agent 状态"""
+        try:
+            from agent.status import get_state_manager
+            state = get_state_manager()
+            return {
+                "status": "success",
+                "data": state.get_status_dict()
+            }
+        except Exception as e:
+            logger.error(f"Get status failed: {e}", exc_info=True)
+            return {
+                "status": "error",
+                "message": f"获取状态失败：{str(e)}"
+            }
 
 def send_response(response: Dict[str, Any]):
     """发送响应到 Electron"""
@@ -174,6 +190,10 @@ def process_message(service: BridgeService, message: Dict[str, Any]):
             provider = message.get("provider")
             result = service.switch_provider(provider)
             send_response({"type": "switch_response", "data": result})
+        
+        elif msg_type == "get_status":
+            result = service.get_status()
+            send_response({"type": "status_response", "data": result})
         
         else:
             logger.warning(f"Unknown message type: {msg_type}")

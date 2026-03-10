@@ -17,6 +17,7 @@ from config.settings import (
 )
 from models.config import MODEL_CONFIG
 from tools.tool_registry import get_all_tools
+from agent.status import get_state_manager
 
 # 使用模块日志器
 logger = logging.getLogger("dogeAgent.agent.factory")
@@ -28,6 +29,10 @@ class AgentFactory:
         self.provider = provider or DEFAULT_MODEL_PROVIDER
         self.llm = None
         self.tools = get_all_tools()
+        
+        # 获取状态管理器
+        self.state = get_state_manager()
+        self.state.set_initializing()
         
         logger.info("初始化 AgentFactory...")
         
@@ -76,6 +81,7 @@ class AgentFactory:
             if self.provider == "nvidia":
                 if not NVIDIA_API_KEY:
                     logger.error("NVIDIA API Key 未配置")
+                    self.state.set_error("NVIDIA API Key 未配置")
                     raise ValueError("NVIDIA API Key 未配置")
                 
                 logger.info(f"使用 NVIDIA 模型：{MODEL_CONFIG['nvidia']['model']}")
@@ -91,10 +97,12 @@ class AgentFactory:
                     logger.info(f"绑定 {len(self.tools)} 个工具到 LLM")
                     self.llm = self.llm.bind_tools(self.tools)
                 logger.info("NVIDIA LLM 初始化成功")
+                self.state.set_ready(provider="nvidia", model=MODEL_CONFIG["nvidia"]["model"])
                 
             elif self.provider == "google":
                 if not GOOGLE_API_KEY:
                     logger.error("Google API Key 未配置")
+                    self.state.set_error("Google API Key 未配置")
                     raise ValueError("Google API Key 未配置")
                 
                 logger.info(f"使用 Google 模型：{MODEL_CONFIG['google']['model']}")
@@ -105,11 +113,13 @@ class AgentFactory:
                     max_output_tokens=2048,
                 )
                 logger.info("Google LLM 初始化成功")
+                self.state.set_ready(provider="google", model=MODEL_CONFIG["google"]["model"])
             else:
                 raise ValueError(f"不支持的模型提供商：{self.provider}")
                 
         except Exception as e:
             logger.error(f"LLM 初始化失败：{e}", exc_info=True)
+            self.state.set_error(str(e))
             raise
     
     def switch_provider(self, provider: str) -> bool:
@@ -158,6 +168,9 @@ class AgentFactory:
             logger.info(f"收到消息：{message[:100]}...")
             logger.debug(f"完整消息：{message}")
             logger.debug(f"历史消息：{history}")
+            
+            # 设置忙碌状态
+            self.state.set_busy()
             
             # 构建消息历史
             messages = [SystemMessage(content=self.system_prompt)]
@@ -227,6 +240,14 @@ class AgentFactory:
                             logger.info("再次调用 LLM 获取最终回复...")
                             final_response = self.llm.invoke(messages)
                             logger.debug(f"最终回复内容：{str(final_response.content)[:200]}...")
+                            
+                            # 增加消息计数
+                            self.state.increment_message_count()
+                            
+                            # 恢复就绪状态
+                            if self.state.is_busy():
+                                self.state.set_ready(self.state.provider, self.state.model)
+                            
                             return final_response.content
                         else:
                             return '汪！请告诉我你想查哪个城市的天气呀？比如"北京天气"或"上海天气"~ 🐕'
@@ -234,10 +255,19 @@ class AgentFactory:
             # 没有工具调用，直接返回
             result = response.content
             logger.info(f"返回结果：{result[:100]}...")
+            
+            # 增加消息计数
+            self.state.increment_message_count()
+            
+            # 恢复就绪状态
+            if self.state.is_busy():
+                self.state.set_ready(self.state.provider, self.state.model)
+            
             return result
             
         except Exception as e:
             logger.error(f"对话失败：{e}", exc_info=True)
+            self.state.set_error(str(e))
             return f"汪...出错了：{str(e)}"
     
     def get_tools_description(self) -> str:
