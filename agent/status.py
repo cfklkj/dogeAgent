@@ -41,20 +41,39 @@ class AgentStateManager:
         self.error_count = 0
         self.provider: Optional[str] = None
         self.model: Optional[str] = None
+        self._last_status_change = None
         
         AgentStateManager._initialized = True
         logger.info("AgentStateManager initialized")
     
+    def _update_status(self, new_status: AgentStatus):
+        """
+        内部方法：更新状态并记录变化
+        
+        Args:
+            new_status: 新的状态
+        """
+        old_status = self.status
+        self.status = new_status
+        self.last_update = datetime.now()
+        
+        # 记录状态变化
+        if old_status != new_status:
+            logger.info(f"状态变化：{old_status.value} -> {new_status.value}")
+            self._last_status_change = {
+                'from': old_status.value,
+                'to': new_status.value,
+                'time': self.last_update.isoformat()
+            }
+    
     def set_initializing(self):
         """设置为初始化中"""
-        self.status = AgentStatus.INITIALIZING
-        self.last_update = datetime.now()
+        self._update_status(AgentStatus.INITIALIZING)
         logger.info("Status: INITIALIZING")
     
     def set_ready(self, provider: str = None, model: str = None):
         """设置为就绪状态"""
-        self.status = AgentStatus.READY
-        self.last_update = datetime.now()
+        self._update_status(AgentStatus.READY)
         if provider:
             self.provider = provider
         if model:
@@ -64,27 +83,25 @@ class AgentStateManager:
     def set_busy(self):
         """设置为忙碌中"""
         if self.status == AgentStatus.READY:
-            self.status = AgentStatus.BUSY
-            self.last_update = datetime.now()
+            self._update_status(AgentStatus.BUSY)
             logger.info("Status: BUSY")
     
     def set_error(self, error_message: str):
         """设置为错误状态"""
-        self.status = AgentStatus.ERROR
+        self._update_status(AgentStatus.ERROR)
         self.error_message = error_message
         self.error_count += 1
-        self.last_update = datetime.now()
         logger.error(f"Status: ERROR - {error_message}")
     
     def set_disconnected(self):
         """设置为断开连接"""
-        self.status = AgentStatus.DISCONNECTED
-        self.last_update = datetime.now()
+        self._update_status(AgentStatus.DISCONNECTED)
         logger.info("Status: DISCONNECTED")
     
     def increment_message_count(self):
         """增加消息计数"""
         self.message_count += 1
+        logger.debug(f"消息计数：{self.message_count}")
     
     def get_status_dict(self) -> Dict[str, Any]:
         """
@@ -100,7 +117,8 @@ class AgentStateManager:
             "error_message": self.error_message,
             "message_count": self.message_count,
             "error_count": self.error_count,
-            "last_update": self.last_update.isoformat()
+            "last_update": self.last_update.isoformat(),
+            "last_status_change": self._last_status_change
         }
     
     def is_ready(self) -> bool:
@@ -117,7 +135,7 @@ class AgentStateManager:
     
     def reset(self):
         """重置状态"""
-        self.status = AgentStatus.INITIALIZING
+        self._update_status(AgentStatus.INITIALIZING)
         self.error_message = None
         self.last_update = datetime.now()
         self.provider = None
