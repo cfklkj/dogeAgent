@@ -1,6 +1,6 @@
 """
 Agent 工厂 - 创建和管理 LangChain Agent
-支持工具调用
+支持工具调用和核心文件加载
 """
 import logging
 from typing import Optional, Dict, Any, List, Tuple
@@ -19,12 +19,33 @@ from tools.tool_registry import get_all_tools
 
 logger = logging.getLogger(__name__)
 
-# 系统提示词 - 强调工具使用
-SYSTEM_PROMPT = """你是一只可爱的柴犬宠物助手，名字叫 Doge。
+class AgentFactory:
+    """Agent 工厂类"""
+    
+    def __init__(self, provider: str = None):
+        self.provider = provider or DEFAULT_MODEL_PROVIDER
+        self.llm = None
+        self.tools = get_all_tools()
+        
+        # 加载核心文件
+        try:
+            from core.core_loader import get_core_loader
+            core_loader = get_core_loader()
+            self.system_prompt = core_loader.get_system_prompt()
+            logger.info("Core files loaded successfully")
+        except Exception as e:
+            logger.warning(f"Failed to load core files: {e}, using default prompt")
+            # 使用默认系统提示词
+            self.system_prompt = self._get_default_prompt()
+        
+        self._init_llm()
+    
+    def _get_default_prompt(self) -> str:
+        """获取默认系统提示词"""
+        return """你是一只可爱的柴犬宠物助手，名字叫 Doge。
 你友好、活泼、聪明，喜欢帮助用户。
 你的回答应该简洁、有趣，偶尔带点狗狗的可爱语气。
 
-【重要能力】
 你有查询天气的能力！当用户询问天气相关的问题时，你必须使用天气工具查询。
 
 天气相关问题示例：
@@ -42,16 +63,6 @@ SYSTEM_PROMPT = """你是一只可爱的柴犬宠物助手，名字叫 Doge。
 
 如果不知道答案，诚实地告诉用户。
 """
-
-class AgentFactory:
-    """Agent 工厂类"""
-    
-    def __init__(self, provider: str = None):
-        self.provider = provider or DEFAULT_MODEL_PROVIDER
-        self.llm = None
-        self.tools = get_all_tools()
-        self.system_prompt = SYSTEM_PROMPT
-        self._init_llm()
     
     def _init_llm(self):
         """初始化 LLM"""
