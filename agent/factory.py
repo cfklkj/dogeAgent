@@ -1,9 +1,10 @@
 """
 Agent 工厂 - 创建和管理 LangChain Agent
+支持工具调用
 """
 import logging
 from typing import Optional, Dict, Any, List, Tuple
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage
 from langchain_nvidia_ai_endpoints import ChatNVIDIA
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.tools import tool
@@ -18,13 +19,26 @@ from tools.tool_registry import get_all_tools
 
 logger = logging.getLogger(__name__)
 
-# 系统提示词 - 包含工具使用说明
+# 系统提示词 - 强调工具使用
 SYSTEM_PROMPT = """你是一只可爱的柴犬宠物助手，名字叫 Doge。
 你友好、活泼、聪明，喜欢帮助用户。
 你的回答应该简洁、有趣，偶尔带点狗狗的可爱语气。
 
-你有查询天气的能力！当用户问天气时，使用工具查询并回复。
-如果用户问"今天天气怎么样"、"天气如何"等问题，使用天气工具查询。
+【重要能力】
+你有查询天气的能力！当用户询问天气相关的问题时，你必须使用天气工具查询。
+
+天气相关问题示例：
+- "今天天气怎么样"
+- "天气如何"
+- "明天会下雨吗"
+- "未来三天龙岩的天气怎样"
+- "北京天气"
+- "上海今天下雨吗"
+
+当你识别到天气相关的问题时：
+1. 立即调用天气工具查询
+2. 根据查询结果给出友好回复
+3. 如果用户没有指定城市，可以询问用户想查哪个城市
 
 如果不知道答案，诚实地告诉用户。
 """
@@ -54,7 +68,7 @@ class AgentFactory:
                     temperature=0.7,
                     max_tokens=2048,
                 )
-                # 如果有工具，使用 bind_tools
+                # 绑定工具
                 if self.tools:
                     self.llm = self.llm.bind_tools(self.tools)
                 logger.info(f"NVIDIA LLM 初始化成功：{MODEL_CONFIG['nvidia']['model']}")
@@ -90,7 +104,7 @@ class AgentFactory:
     
     def chat(self, message: str, history: List[Tuple[str, str]] = None) -> str:
         """
-        与 Agent 对话
+        与 Agent 对话（支持工具调用）
         
         Args:
             message: 用户消息
@@ -112,31 +126,63 @@ class AgentFactory:
                         continue
                     
                     role, content = item
-                    
-                    # 确保 content 是字符串且不为空
                     if not isinstance(content, str) or not content:
                         logger.warning(f"Invalid content in history: {content}")
                         continue
                     
-                    # 确保 role 是有效的
                     if role == "human":
                         messages.append(HumanMessage(content=content))
                     elif role == "ai":
                         messages.append(AIMessage(content=content))
-                    else:
-                        logger.warning(f"Unknown role: {role}")
             
             # 添加当前消息
             if message and isinstance(message, str):
                 messages.append(HumanMessage(content=message))
             else:
-                logger.warning(f"Invalid message: {message}")
                 messages.append(HumanMessage(content=str(message) if message else ""))
             
-            # 调用 LLM
-            logger.debug(f"Sending {len(messages)} messages to LLM")
+            logger.debug(f"Sending {len(messages)} messages to LLM with {len(self.tools)} tools")
+            
+            # 调用 LLM（可能包含工具调用）
             response = self.llm.invoke(messages)
             
+            # 检查是否有工具调用
+            if hasattr(response, 'tool_calls') and response.tool_calls:
+                logger.info(f"Tool calls detected: {len(response.tool_calls)}")
+                # 执行工具调用
+                for tool_call in response.tool_calls:
+                    tool_name = tool_call.get('name')
+                    tool_args = tool_call.get('args', {})
+                    
+                    logger.info(f"Executing tool: {tool_name} with args: {tool_args}")
+                    
+                    # 执行工具
+                    if tool_name == 'get_weather':
+                        location = tool_args.get('location', '')
+                        if not location:
+                            # 尝试从消息中提取位置
+                            if '龙岩' in message:
+                                location = '龙岩'
+                            elif '北京' in message:
+                                location = '北京'
+                            # ... 可以添加更多城市识别
+                            
+                        if location:
+                            from tools.weather_tool import get_weather_sync
+                            tool_result = get_weather_sync(location)
+                            logger.info(f"Weather tool result: {tool_result}")
+                            
+                            # 将工具结果添加到对话中
+                            messages.append(AIMessage(content=f"正在查询{location}的天气..."))
+                            messages.append(ToolMessage(content=tool_result, tool_call_id=tool_call.get('id', '')))
+                            
+                            # 再次调用 LLM 获取最终回复
+                            final_response = self.llm.invoke(messages)
+                            return final_response.content
+                        else:
+                            return "汪！请告诉我你想查哪个城市的天气呀？比如"北京天气"或"上海天气"~ 🐕"
+            
+            # 没有工具调用，直接返回
             return response.content
             
         except Exception as e:
