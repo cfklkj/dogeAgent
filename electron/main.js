@@ -115,7 +115,7 @@ function sendToPython(message) {
     return false;
   }
   
-  try {
+  try:
     // 使用 JSON.stringify 确保正确的 JSON 格式
     const jsonStr = JSON.stringify(message);
     console.log('Sending to Python:', jsonStr);
@@ -189,7 +189,7 @@ function createChatWindow() {
   chatWindow.loadFile(path.join(__dirname, 'chat.html'));
   chatWindow.setTitle('dogeAgent - 聊天');
   
-  // 聊天窗口准备好后，发送连接状态
+  // 监听聊天窗口的发送请求
   chatWindow.webContents.on('did-finish-load', () => {
     console.log('Chat window loaded, Python ready:', pythonReady);
     if (pythonReady) {
@@ -204,6 +204,12 @@ function createChatWindow() {
     chatWindow = null;
   });
 }
+
+// 监听发送消息到 Python 的请求
+ipcMain.on('send-to-python', (event, message) => {
+  console.log('收到 send-to-python 请求:', message);
+  sendToPython(message);
+});
 
 // 创建系统托盘
 function createTray() {
