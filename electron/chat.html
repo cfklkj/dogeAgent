@@ -89,6 +89,7 @@
       flex: 1;
       padding: 20px;
       overflow-y: auto;
+      position: relative;
     }
     
     .message {
@@ -133,6 +134,67 @@
     
     .message.ai .message-time {
       text-align: left;
+    }
+    
+    /* 正在输入提示 */
+    .typing-indicator {
+      display: none;
+      margin-bottom: 15px;
+      margin-right: auto;
+      max-width: 80%;
+      background: rgba(255, 255, 255, 0.9);
+      color: #333;
+      padding: 12px 16px;
+      border-radius: 18px 18px 18px 4px;
+      animation: messageIn 0.3s ease-out;
+    }
+    
+    .typing-indicator.show {
+      display: inline-block;
+    }
+    
+    .typing-indicator .typing-content {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .typing-indicator .typing-dots {
+      display: flex;
+      gap: 4px;
+    }
+    
+    .typing-indicator .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #666;
+      animation: typingDot 1.4s infinite;
+    }
+    
+    .typing-indicator .dot:nth-child(2) {
+      animation-delay: 0.2s;
+    }
+    
+    .typing-indicator .dot:nth-child(3) {
+      animation-delay: 0.4s;
+    }
+    
+    @keyframes typingDot {
+      0%, 100% {
+        opacity: 0.4;
+        transform: scale(0.8);
+      }
+      50% {
+        opacity: 1;
+        transform: scale(1);
+      }
+    }
+    
+    .typing-indicator .typing-text {
+      font-style: italic;
+      color: #666;
+      font-size: 13px;
     }
     
     .input-area {
@@ -300,6 +362,17 @@
   
   <div class="chat-container" id="chatContainer">
     <!-- 消息会动态添加到这里 -->
+    <!-- 正在输入提示 -->
+    <div class="typing-indicator" id="typingIndicator">
+      <div class="typing-content">
+        <div class="typing-dots">
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+        </div>
+        <span class="typing-text">Doge 正在思考中...</span>
+      </div>
+    </div>
   </div>
   
   <div class="input-area">
@@ -319,6 +392,7 @@
     const clearBtn = document.getElementById('clearBtn');
     const statusPanel = document.getElementById('statusPanel');
     const agentStatusItem = document.getElementById('agentStatus');
+    const typingIndicator = document.getElementById('typingIndicator');
     
     // 聊天历史存储键名
     const CHAT_HISTORY_KEY = 'doge_chat_history';
@@ -329,6 +403,7 @@
     // 状态轮询
     let statusPolling = null;
     let lastStatusTime = null;
+    let lastKnownStatus = 'initializing';
     
     // 格式化时间
     function formatTime(date) {
@@ -345,6 +420,16 @@
         return date.toLocaleString('zh-CN');
       } catch (e) {
         return isoString;
+      }
+    }
+    
+    // 显示/隐藏输入提示
+    function showTypingIndicator(show) {
+      if (show) {
+        typingIndicator.classList.add('show');
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+      } else {
+        typingIndicator.classList.remove('show');
       }
     }
     
@@ -373,6 +458,17 @@
       document.getElementById('detailMessageCount').textContent = messageCount || 0;
       document.getElementById('detailErrorCount').textContent = errorCount || 0;
       document.getElementById('detailUpdateTime').textContent = formatDateTime(lastUpdate);
+      
+      // 处理忙碌状态 - 显示输入提示
+      if (status === 'busy' && lastKnownStatus !== 'busy') {
+        console.log('Agent 开始忙碌，显示输入提示');
+        showTypingIndicator(true);
+      } else if (status !== 'busy' && lastKnownStatus === 'busy') {
+        console.log('Agent 完成忙碌，隐藏输入提示');
+        showTypingIndicator(false);
+      }
+      
+      lastKnownStatus = status || 'disconnected';
     }
     
     // 获取 Agent 状态
