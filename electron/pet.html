@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>dogeAgent - 宠物</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      background: transparent;
+      overflow: hidden;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+    
+    .container {
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      position: relative;
+    }
+    
+    .doge {
+      width: 300px;
+      height: 300px;
+      background: url('../assets/icons/doge.png') center/contain no-repeat;
+      animation: idle 2s ease-in-out infinite;
+      cursor: pointer;
+      transition: transform 0.2s;
+    }
+    
+    .doge:hover {
+      transform: scale(1.05);
+    }
+    
+    .doge.speaking {
+      animation: speaking 0.5s ease-in-out infinite;
+    }
+    
+    .doge.happy {
+      animation: happy 1s ease-in-out infinite;
+    }
+    
+    .doge.thinking {
+      animation: thinking 1.5s ease-in-out infinite;
+    }
+    
+    @keyframes idle {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-10px); }
+    }
+    
+    @keyframes speaking {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.1); }
+    }
+    
+    @keyframes happy {
+      0%, 100% { transform: rotate(-5deg); }
+      50% { transform: rotate(5deg); }
+    }
+    
+    @keyframes thinking {
+      0%, 100% { transform: rotate(-3deg); }
+      50% { transform: rotate(3deg); }
+    }
+    
+    .status-bar {
+      position: absolute;
+      bottom: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(255, 255, 255, 0.9);
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 12px;
+      color: #333;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="doge" id="doge"></div>
+    <div class="status-bar" id="statusBar">双击打开聊天窗口</div>
+  </div>
+  
+  <script>
+    const doge = document.getElementById('doge');
+    const statusBar = document.getElementById('statusBar');
+    const { ipcRenderer } = require('electron');
+    
+    // 双击打开聊天窗口
+    doge.addEventListener('dblclick', () => {
+      ipcRenderer.send('open-chat');
+    });
+    
+    // 监听 Python 消息
+    ipcRenderer.on('python-message', (event, message) => {
+      console.log('收到 Python 消息:', message);
+      
+      if (message.type === 'ready') {
+        statusBar.textContent = '🐶 已就绪';
+      }
+    });
+    
+    // 设置状态
+    function setStatus(text) {
+      statusBar.textContent = text;
+    }
+    
+    // 设置动画状态
+    function setAnimation(state) {
+      doge.className = 'doge ' + state;
+    }
+    
+    // 暴露给外部调用
+    window.setDogeState = setAnimation;
+    window.setStatus = setStatus;
+  </script>
+</body>
+</html>

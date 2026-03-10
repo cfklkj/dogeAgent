@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>dogeAgent - 聊天</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    
+    .header {
+      padding: 15px 20px;
+      background: rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(10px);
+      color: white;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .header h1 {
+      font-size: 18px;
+      font-weight: 600;
+    }
+    
+    .status {
+      font-size: 12px;
+      opacity: 0.8;
+    }
+    
+    .chat-container {
+      flex: 1;
+      padding: 20px;
+      overflow-y: auto;
+    }
+    
+    .message {
+      margin-bottom: 15px;
+      max-width: 80%;
+      animation: messageIn 0.3s ease-out;
+    }
+    
+    @keyframes messageIn {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    
+    .message.user {
+      margin-left: auto;
+      background: #48bb78;
+      color: white;
+      padding: 12px 16px;
+      border-radius: 18px 18px 4px 18px;
+    }
+    
+    .message.ai {
+      margin-right: auto;
+      background: rgba(255, 255, 255, 0.9);
+      color: #333;
+      padding: 12px 16px;
+      border-radius: 18px 18px 18px 4px;
+    }
+    
+    .input-area {
+      padding: 20px;
+      background: rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(10px);
+      display: flex;
+      gap: 10px;
+    }
+    
+    #userInput {
+      flex: 1;
+      padding: 12px 20px;
+      border: none;
+      border-radius: 25px;
+      font-size: 14px;
+      outline: none;
+      background: rgba(255, 255, 255, 0.9);
+    }
+    
+    #userInput:focus {
+      background: white;
+    }
+    
+    #sendBtn {
+      width: 50px;
+      height: 50px;
+      border: none;
+      border-radius: 50%;
+      background: #48bb78;
+      color: white;
+      font-size: 20px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    
+    #sendBtn:hover {
+      background: #38a169;
+      transform: scale(1.05);
+    }
+    
+    #sendBtn:active {
+      transform: scale(0.95);
+    }
+    
+    .typing {
+      font-style: italic;
+      opacity: 0.7;
+      font-size: 12px;
+      margin-top: 5px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>🐶 dogeAgent</h1>
+    <span class="status" id="status">连接中...</span>
+  </div>
+  
+  <div class="chat-container" id="chatContainer">
+    <div class="message ai">
+      汪！我是 Doge，你的智能桌面宠物助手！有什么可以帮你的吗？🐾
+    </div>
+  </div>
+  
+  <div class="input-area">
+    <input type="text" id="userInput" placeholder="和小狗说说话..." onkeypress="handleKeyPress(event)">
+    <button id="sendBtn" onclick="sendMessage()">➤</button>
+  </div>
+  
+  <script>
+    const { ipcRenderer } = require('electron');
+    const chatContainer = document.getElementById('chatContainer');
+    const userInput = document.getElementById('userInput');
+    const statusEl = document.getElementById('status');
+    
+    let pythonReady = false;
+    
+    // 发送消息
+    function sendMessage() {
+      const text = userInput.value.trim();
+      if (!text || !pythonReady) return;
+      
+      // 添加用户消息
+      addMessage(text, 'user');
+      userInput.value = '';
+      
+      // 发送到 Python
+      ipcRenderer.send('send-to-python', {
+        type: 'chat',
+        payload: { message: text }
+      });
+      
+      // 显示思考中
+      showTyping();
+    }
+    
+    // 添加消息到聊天框
+    function addMessage(text, type) {
+      const div = document.createElement('div');
+      div.className = `message ${type}`;
+      div.textContent = text;
+      chatContainer.appendChild(div);
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+    
+    // 显示思考中
+    function showTyping() {
+      const typing = document.createElement('div');
+      typing.className = 'typing';
+      typing.id = 'typing';
+      typing.textContent = 'Doge 正在思考...';
+      chatContainer.appendChild(typing);
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+    
+    // 移除思考提示
+    function removeTyping() {
+      const typing = document.getElementById('typing');
+      if (typing) typing.remove();
+    }
+    
+    // 处理按键
+    function handleKeyPress(event) {
+      if (event.key === 'Enter') {
+        sendMessage();
+      }
+    }
+    
+    // 监听 Python 响应
+    ipcRenderer.on('python-message', (event, message) => {
+      console.log('收到 Python 消息:', message);
+      
+      if (message.type === 'ready') {
+        pythonReady = true;
+        statusEl.textContent = '🟢 已连接';
+        addMessage('汪！我已经准备好了，可以开始聊天啦！', 'ai');
+      }
+      
+      if (message.type === 'chat_response') {
+        removeTyping();
+        const data = message.data;
+        
+        if (data.status === 'success') {
+          addMessage(data.message, 'ai');
+        } else {
+          addMessage('出错了：' + data.message, 'ai');
+        }
+      }
+    });
+    
+    // 初始化
+    setTimeout(() => {
+      if (!pythonReady) {
+        statusEl.textContent = '🔴 未连接';
+      }
+    }, 5000);
+  </script>
+</body>
+</html>
