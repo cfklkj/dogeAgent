@@ -115,7 +115,7 @@ function sendToPython(message) {
     return false;
   }
   
-  try:
+  try {
     // 使用 JSON.stringify 确保正确的 JSON 格式
     const jsonStr = JSON.stringify(message);
     console.log('Sending to Python:', jsonStr);
