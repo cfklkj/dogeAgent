@@ -34,12 +34,20 @@
       font-weight: 600;
     }
     
-    .status {
+    .status-bar {
+      display: flex;
+      gap: 15px;
+      align-items: center;
       font-size: 12px;
-      opacity: 0.8;
+    }
+    
+    .status-item {
       display: flex;
       align-items: center;
       gap: 6px;
+      background: rgba(255, 255, 255, 0.15);
+      padding: 6px 12px;
+      border-radius: 12px;
     }
     
     .status-dot {
@@ -50,12 +58,20 @@
       animation: pulse 1.5s infinite;
     }
     
-    .status-dot.connected {
+    .status-dot.ready {
       background: #10b981;
     }
     
-    .status-dot.disconnected {
+    .status-dot.busy {
+      background: #f59e0b;
+    }
+    
+    .status-dot.error {
       background: #ef4444;
+    }
+    
+    .status-dot.disconnected {
+      background: #6b7280;
     }
     
     @keyframes pulse {
@@ -175,17 +191,104 @@
     .clear-btn:hover {
       background: rgba(255, 255, 255, 0.3);
     }
+    
+    /* 状态详情面板 */
+    .status-panel {
+      position: fixed;
+      top: 70px;
+      right: 20px;
+      background: white;
+      border-radius: 12px;
+      padding: 15px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+      font-size: 12px;
+      max-width: 280px;
+      display: none;
+      z-index: 1000;
+    }
+    
+    .status-panel.show {
+      display: block;
+    }
+    
+    .status-panel h3 {
+      margin-bottom: 10px;
+      color: #333;
+      font-size: 14px;
+    }
+    
+    .status-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 8px;
+      padding: 4px 0;
+      border-bottom: 1px solid #eee;
+    }
+    
+    .status-row:last-child {
+      border-bottom: none;
+    }
+    
+    .status-label {
+      color: #666;
+    }
+    
+    .status-value {
+      color: #333;
+      font-weight: 500;
+    }
+    
+    .status-value.error {
+      color: #ef4444;
+    }
+    
+    .status-value.success {
+      color: #10b981;
+    }
   </style>
 </head>
 <body>
   <div class="header">
     <h1>🐶 dogeAgent</h1>
-    <div style="display: flex; gap: 10px; align-items: center;">
-      <button class="clear-btn" id="clearBtn" title="清空聊天记录">🗑️ 清空</button>
-      <div class="status">
-        <span class="status-dot" id="statusDot"></span>
-        <span id="statusText">连接中...</span>
+    <div class="status-bar">
+      <div class="status-item" id="connectionStatus" title="连接状态">
+        <span class="status-dot" id="connectionDot"></span>
+        <span id="connectionText">连接中...</span>
       </div>
+      <div class="status-item" id="agentStatus" title="Agent 状态" style="cursor: pointer;">
+        <span class="status-dot" id="agentDot"></span>
+        <span id="agentText">初始化中</span>
+      </div>
+      <button class="clear-btn" id="clearBtn" title="清空聊天记录">🗑️</button>
+    </div>
+  </div>
+  
+  <!-- 状态详情面板 -->
+  <div class="status-panel" id="statusPanel">
+    <h3>📊 Agent 状态详情</h3>
+    <div class="status-row">
+      <span class="status-label">状态:</span>
+      <span class="status-value" id="detailStatus">-</span>
+    </div>
+    <div class="status-row">
+      <span class="status-label">提供商:</span>
+      <span class="status-value" id="detailProvider">-</span>
+    </div>
+    <div class="status-row">
+      <span class="status-label">模型:</span>
+      <span class="status-value" id="detailModel">-</span>
+    </div>
+    <div class="status-row">
+      <span class="status-label">消息数:</span>
+      <span class="status-value" id="detailMessageCount">0</span>
+    </div>
+    <div class="status-row">
+      <span class="status-label">错误数:</span>
+      <span class="status-value" id="detailErrorCount">0</span>
+    </div>
+    <div class="status-row">
+      <span class="status-label">最后更新:</span>
+      <span class="status-value" id="detailUpdateTime">-</span>
     </div>
   </div>
   
@@ -203,9 +306,13 @@
     const chatContainer = document.getElementById('chatContainer');
     const userInput = document.getElementById('userInput');
     const sendBtn = document.getElementById('sendBtn');
-    const statusDot = document.getElementById('statusDot');
-    const statusText = document.getElementById('statusText');
+    const connectionDot = document.getElementById('connectionDot');
+    const connectionText = document.getElementById('connectionText');
+    const agentDot = document.getElementById('agentDot');
+    const agentText = document.getElementById('agentText');
     const clearBtn = document.getElementById('clearBtn');
+    const statusPanel = document.getElementById('statusPanel');
+    const agentStatusItem = document.getElementById('agentStatus');
     
     // 聊天历史存储键名
     const CHAT_HISTORY_KEY = 'doge_chat_history';
@@ -213,11 +320,60 @@
     // 聊天历史
     let chatHistory = [];
     
+    // 状态轮询
+    let statusPolling = null;
+    
     // 格式化时间
     function formatTime(date) {
       const hours = date.getHours().toString().padStart(2, '0');
       const minutes = date.getMinutes().toString().padStart(2, '0');
       return `${hours}:${minutes}`;
+    }
+    
+    // 格式化日期时间
+    function formatDateTime(isoString) {
+      if (!isoString) return '-';
+      const date = new Date(isoString);
+      return date.toLocaleString('zh-CN');
+    }
+    
+    // 更新 Agent 状态显示
+    function updateAgentStatus(status, provider, model, messageCount, errorCount, lastUpdate) {
+      // 更新状态点
+      agentDot.className = `status-dot ${status}`;
+      
+      // 更新状态文本
+      const statusText = {
+        'initializing': '初始化中',
+        'ready': '就绪',
+        'busy': '忙碌中',
+        'error': '错误',
+        'disconnected': '断开'
+      }[status] || status;
+      
+      agentText.textContent = statusText;
+      
+      // 更新详情面板
+      document.getElementById('detailStatus').textContent = statusText;
+      document.getElementById('detailProvider').textContent = provider || '-';
+      document.getElementById('detailModel').textContent = model || '-';
+      document.getElementById('detailMessageCount').textContent = messageCount || 0;
+      document.getElementById('detailErrorCount').textContent = errorCount || 0;
+      document.getElementById('detailUpdateTime').textContent = formatDateTime(lastUpdate);
+    }
+    
+    // 获取 Agent 状态
+    function fetchAgentStatus() {
+      ipcRenderer.send('send-to-python', {
+        type: 'get_status',
+        payload: {}
+      });
+    }
+    
+    // 开始轮询状态
+    function startStatusPolling() {
+      fetchAgentStatus();
+      statusPolling = setInterval(fetchAgentStatus, 2000); // 每 2 秒更新一次
     }
     
     // 保存聊天历史到 localStorage
@@ -336,20 +492,40 @@
         } else {
           addMessage('汪...出错了：' + data.message, false);
         }
+      } else if (message.type === 'status_response') {
+        // 处理状态响应
+        const data = message.data;
+        if (data.status === 'success') {
+          const statusData = data.data;
+          updateAgentStatus(
+            statusData.status,
+            statusData.provider,
+            statusData.model,
+            statusData.message_count,
+            statusData.error_count,
+            statusData.last_update
+          );
+        }
       }
     });
     
     // 连接状态
     ipcRenderer.on('connection-status', (event, status) => {
       if (status === 'connected') {
-        statusDot.className = 'status-dot connected';
-        statusText.textContent = '已连接';
+        connectionDot.className = 'status-dot ready';
+        connectionText.textContent = '已连接';
+        // 开始轮询 Agent 状态
+        startStatusPolling();
       } else if (status === 'disconnected') {
-        statusDot.className = 'status-dot disconnected';
-        statusText.textContent = '未连接';
+        connectionDot.className = 'status-dot disconnected';
+        connectionText.textContent = '未连接';
+        // 停止轮询
+        if (statusPolling) {
+          clearInterval(statusPolling);
+        }
       } else {
-        statusDot.className = 'status-dot';
-        statusText.textContent = '连接中...';
+        connectionDot.className = 'status-dot';
+        connectionText.textContent = '连接中...';
       }
     });
     
@@ -365,6 +541,18 @@
     
     // 清空按钮
     clearBtn.addEventListener('click', clearHistory);
+    
+    // 点击 Agent 状态显示详情
+    agentStatusItem.addEventListener('click', () => {
+      statusPanel.classList.toggle('show');
+    });
+    
+    // 点击其他地方关闭状态面板
+    document.addEventListener('click', (e) => {
+      if (!statusPanel.contains(e.target) && !agentStatusItem.contains(e.target)) {
+        statusPanel.classList.remove('show');
+      }
+    });
     
     // 窗口加载时加载历史记录
     loadHistory();
