@@ -10,10 +10,6 @@ from pathlib import Path
 from typing import Optional, Dict, Any
 from dotenv import load_dotenv
 
-# 强制设置标准输出为 UTF-8
-sys.stdout = io.TextWriterWrapper(sys.stdout, encoding='utf-8')
-sys.stderr = io.TextWriterWrapper(sys.stderr, encoding='utf-8')
-
 # 添加项目根目录到 Python 路径
 project_root = Path(__file__).parent.parent
 if str(project_root) not in sys.path:
@@ -26,19 +22,26 @@ load_dotenv(project_root / '.env')
 from agent.factory import get_agent, reset_agent
 from storage.session_store import session_store
 
-# 配置日志 - 使用 UTF-8 编码
-class UTF8StreamHandler(logging.StreamHandler):
-    """UTF-8 编码的日志处理器"""
+# 配置日志 - 避免使用 emoji，使用 ASCII 字符
+class SafeStreamHandler(logging.StreamHandler):
+    """安全的日志处理器 - 避免编码问题"""
     def emit(self, record):
         try:
             msg = self.format(record)
+            # 确保消息可以安全编码
+            try:
+                msg.encode('utf-8')
+            except:
+                msg = msg.encode('utf-8', errors='replace').decode('utf-8')
+            
             stream = self.stream
             stream.write(msg + self.terminator)
             self.flush()
         except (KeyboardInterrupt, SystemExit):
             raise
         except Exception:
-            self.handleError(record)
+            # 安静地处理错误，避免死循环
+            pass
 
 # 设置日志
 logger = logging.getLogger("bridge")
@@ -47,8 +50,8 @@ logger.setLevel(logging.INFO)
 # 清除现有处理器
 logger.handlers.clear()
 
-# 添加 UTF-8 处理器
-handler = UTF8StreamHandler()
+# 添加安全处理器
+handler = SafeStreamHandler()
 handler.setFormatter(logging.Formatter(
     '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 ))
@@ -58,7 +61,7 @@ logger.addHandler(handler)
 root_logger = logging.getLogger()
 root_logger.setLevel(logging.INFO)
 root_logger.handlers.clear()
-root_handler = UTF8StreamHandler()
+root_handler = SafeStreamHandler()
 root_handler.setFormatter(logging.Formatter(
     '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 ))
@@ -78,13 +81,13 @@ class BridgeService:
             return {"status": "success", "message": "Agent 已初始化"}
         
         try:
-            logger.info(f"开始初始化 Agent, provider: {provider or 'default'}")
+            logger.info(f"Starting to initialize Agent, provider: {provider or 'default'}")
             self.agent = get_agent(provider)
             self._initialized = True
-            logger.info(f"Agent 初始化成功，provider: {provider}")
+            logger.info(f"Agent initialized successfully, provider: {provider}")
             return {"status": "success", "message": "Agent 初始化成功"}
         except Exception as e:
-            logger.error(f"Agent 初始化失败：{e}")
+            logger.error(f"Agent initialization failed: {e}")
             import traceback
             logger.error(traceback.format_exc())
             return {"status": "error", "message": f"Agent 初始化失败：{str(e)}"}
@@ -101,7 +104,7 @@ class BridgeService:
         """
         # 如果未初始化，先初始化
         if not self.agent:
-            logger.info("Agent 未初始化，尝试自动初始化...")
+            logger.info("Agent not initialized, attempting auto-initialization...")
             init_result = self.init_agent()
             if init_result.get("status") != "success":
                 return {"status": "error", "message": f"Agent 初始化失败：{init_result.get('message')}"}
@@ -126,11 +129,11 @@ class BridgeService:
             return {
                 "status": "success",
                 "message": response,
-                "emotion": "calm"  # TODO: 情感系统集成
+                "emotion": "calm"
             }
             
         except Exception as e:
-            logger.error(f"对话失败：{e}")
+            logger.error(f"Chat failed: {e}")
             import traceback
             logger.error(traceback.format_exc())
             return {"status": "error", "message": f"对话失败：{str(e)}"}
@@ -143,9 +146,9 @@ class BridgeService:
         try:
             success = self.agent.switch_provider(provider)
             if success:
-                return {"status": "success", "message": f"已切换到 {provider}"}
+                return {"status": "success", "message": f"Switched to {provider}"}
             else:
-                return {"status": "error", "message": "切换失败"}
+                return {"status": "error", "message": "Switch failed"}
         except Exception as e:
             return {"status": "error", "message": str(e)}
     
@@ -162,10 +165,10 @@ class BridgeService:
 def main():
     """主函数 - 处理来自 Electron 的消息"""
     bridge = BridgeService()
-    logger.info("Bridge Service 启动")
+    logger.info("Bridge Service starting...")
     
-    # 发送启动消息
-    print(json.dumps({"type": "ready", "message": "Bridge Service 已就绪"}, ensure_ascii=False))
+    # 发送启动消息 - 使用 ensure_ascii=False
+    print(json.dumps({"type": "ready", "message": "Bridge Service ready"}, ensure_ascii=False))
     sys.stdout.flush()
     
     # 主循环
@@ -179,7 +182,7 @@ def main():
             msg_type = data.get("type")
             payload = data.get("payload", {})
             
-            logger.info(f"收到消息：{msg_type}")
+            logger.info(f"Received message type: {msg_type}")
             
             # 处理不同类型的消息
             if msg_type == "init":
@@ -195,9 +198,9 @@ def main():
                 result = bridge.get_status()
             
             else:
-                result = {"status": "error", "message": f"未知消息类型：{msg_type}"}
+                result = {"status": "error", "message": f"Unknown message type: {msg_type}"}
             
-            # 返回结果 - 使用 ensure_ascii=False 保留中文
+            # 返回结果 - 使用 ensure_ascii=False
             response = {
                 "type": f"{msg_type}_response",
                 "data": result
@@ -206,9 +209,9 @@ def main():
             sys.stdout.flush()
             
         except json.JSONDecodeError as e:
-            logger.error(f"JSON 解析错误：{e}")
+            logger.error(f"JSON decode error: {e}")
         except Exception as e:
-            logger.error(f"处理消息失败：{e}")
+            logger.error(f"Message processing failed: {e}")
             error_response = {
                 "type": "error",
                 "data": {"status": "error", "message": str(e)}
