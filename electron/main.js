@@ -20,13 +20,21 @@ function startPythonBridge() {
   
   pythonProcess = spawn(pythonPath, [scriptPath], {
     stdio: ['pipe', 'pipe', 'pipe'],
-    cwd: path.join(__dirname, '..')
+    cwd: path.join(__dirname, '..'),
+    env: {
+      ...process.env,
+      PYTHONIOENCODING: 'utf-8'  // 强制 Python 使用 UTF-8
+    }
   });
-  
+
+  // 处理 Python 输出
   pythonProcess.stdout.on('data', (data) => {
-    console.log(`Python: ${data}`);
+    // 关键修复：使用 Buffer 的 toString('utf8') 确保 UTF-8 解码
+    const str = data.toString('utf8');
+    console.log(`Python: ${str}`);
+    
     try {
-      const lines = data.toString().split('\n');
+      const lines = str.split('\n');
       lines.forEach(line => {
         if (line.trim()) {
           const message = JSON.parse(line);
@@ -38,7 +46,6 @@ function startPythonBridge() {
             console.log('Python bridge ready');
             
             // 自动发送初始化消息
-            console.log('Sending init message to Python...');
             setTimeout(() => {
               sendToPython({ type: 'init', payload: {} });
             }, 500);
@@ -64,14 +71,17 @@ function startPythonBridge() {
         }
       });
     } catch (e) {
-      console.error('解析 Python 消息失败:', e, data.toString());
+      console.error('解析 Python 消息失败:', e, str);
     }
   });
-  
+
+  // 处理 Python 错误输出
   pythonProcess.stderr.on('data', (data) => {
-    console.error(`Python Error: ${data}`);
+    const str = data.toString('utf8');
+    console.error(`Python Error: ${str}`);
   });
-  
+
+  // 处理 Python 进程退出
   pythonProcess.on('close', (code) => {
     console.log(`Python 进程退出，代码：${code}`);
     pythonReady = false;
@@ -84,7 +94,8 @@ function startPythonBridge() {
       mainWindow.webContents.send('connection-status', 'disconnected');
     }
   });
-  
+
+  // 处理 Python 进程错误
   pythonProcess.on('error', (err) => {
     console.error('Python 进程启动失败:', err);
     pythonReady = false;
@@ -93,7 +104,7 @@ function startPythonBridge() {
       chatWindow.webContents.send('connection-status', 'disconnected');
     }
   });
-  
+
   return pythonProcess;
 }
 
@@ -105,7 +116,10 @@ function sendToPython(message) {
   }
   
   try {
-    pythonProcess.stdin.write(JSON.stringify(message) + '\n');
+    // 使用 JSON.stringify 确保正确的 JSON 格式
+    const jsonStr = JSON.stringify(message);
+    console.log('Sending to Python:', jsonStr);
+    pythonProcess.stdin.write(jsonStr + '\n');
     return true;
   } catch (e) {
     console.error('发送到 Python 失败:', e);
@@ -196,56 +210,33 @@ function createTray() {
   
   tray.setToolTip('dogeAgent - 智能桌面宠物');
   tray.setContextMenu(contextMenu);
-  
-  tray.on('click', () => {
+  tray.on('double-click', () => {
     if (mainWindow) {
-      mainWindow.isVisible() ? mainWindow.hide() : mainWindow.show();
+      mainWindow.show();
     }
   });
 }
 
-// 应用就绪
+// 创建窗口
 app.whenReady().then(() => {
-  console.log('dogeAgent 启动中...');
-  
-  // 启动 Python 桥接
-  startPythonBridge();
-  
-  // 创建窗口
+  createTray();
   createMainWindow();
-  
-  // 延迟创建托盘
-  setTimeout(createTray, 1000);
-  
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createMainWindow();
-    }
-  });
+  startPythonBridge();
 });
 
+// 窗口全部关闭时
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
 });
 
+// 清理资源
 app.on('will-quit', () => {
   if (pythonProcess) {
     pythonProcess.kill();
   }
 });
 
-// IPC 通信
-ipcMain.on('send-to-python', (event, message) => {
-  console.log('IPC send-to-python:', message);
-  sendToPython(message);
-});
-
-ipcMain.on('open-chat', () => {
-  createChatWindow();
-});
-
-ipcMain.on('get-python-status', (event) => {
-  event.reply('python-status', { ready: pythonReady });
-});
+// 导出给渲染进程使用
+module.exports = { sendToPython };
