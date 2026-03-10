@@ -245,7 +245,7 @@ def process_message(service: BridgeService, message: Dict[str, Any]):
         logger.error(f"Error processing message: {e}", exc_info=True)
         send_response({
             "type": "error",
-            "data": {"message": f"处理消息失败：{str(e)}"
+            "data": {"message": f"处理消息失败：{str(e)}"}
         })
 
 def main():
