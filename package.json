@@ -9,15 +9,20 @@
     "pack": "electron-builder --dir",
     "dist": "electron-builder"
   },
-  "keywords": ["electron", "desktop-pet", "ai", "langchain"],
+  "keywords": [
+    "electron",
+    "desktop-pet",
+    "ai",
+    "langchain"
+  ],
   "author": "Fly",
   "license": "MIT",
   "dependencies": {
-    "electron": "^28.0.0",
     "electron-store": "^8.1.0",
     "node-fetch": "^3.3.2"
   },
   "devDependencies": {
+    "electron": "^40.8.0",
     "electron-builder": "^24.9.1"
   },
   "build": {

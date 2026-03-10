@@ -9,12 +9,24 @@
       margin: 0;
       padding: 0;
       box-sizing: border-box;
+      -webkit-user-select: none;
     }
     
     body {
       background: transparent;
       overflow: hidden;
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+    
+    /* 可拖动区域 - 覆盖整个窗口 */
+    .drag-region {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      -webkit-app-region: drag;
+      z-index: 1;
     }
     
     .container {
@@ -24,6 +36,13 @@
       justify-content: center;
       align-items: center;
       position: relative;
+      z-index: 2;
+    }
+    
+    .doge-wrapper {
+      position: relative;
+      cursor: pointer;
+      -webkit-app-region: no-drag; /* 狗子区域不可拖动 */
     }
     
     .doge {
@@ -31,11 +50,19 @@
       height: 300px;
       background: url('../assets/icons/doge.png') center/contain no-repeat;
       animation: idle 2s ease-in-out infinite;
-      cursor: pointer;
-      transition: transform 0.2s;
+      transition: transform 0.1s;
     }
     
-    .doge:hover {
+    .doge-wrapper:active {
+      cursor: grabbing;
+    }
+    
+    .doge-wrapper.dragging .doge {
+      animation: none !important;
+      transform: scale(0.95);
+    }
+    
+    .doge-wrapper:hover .doge {
       transform: scale(1.05);
     }
     
@@ -82,47 +109,87 @@
       font-size: 12px;
       color: #333;
       box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      -webkit-app-region: no-drag;
+    }
+    
+    .hint {
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(255, 255, 255, 0.8);
+      padding: 6px 12px;
+      border-radius: 12px;
+      font-size: 11px;
+      color: #666;
+      z-index: 30;
+      opacity: 0.7;
+      transition: opacity 0.3s;
+      -webkit-app-region: no-drag;
     }
   </style>
 </head>
 <body>
+  <!-- 透明拖动层 -->
+  <div class="drag-region" id="dragRegion"></div>
+  
+  <div class="hint" id="hint">💡 拖动空白处移动窗口 | 双击狗子打开聊天</div>
+  
   <div class="container">
-    <div class="doge" id="doge"></div>
+    <div class="doge-wrapper" id="dogeWrapper">
+      <div class="doge" id="doge"></div>
+    </div>
     <div class="status-bar" id="statusBar">双击打开聊天窗口</div>
   </div>
   
   <script>
+    const { ipcRenderer } = require('electron');
+    const dragRegion = document.getElementById('dragRegion');
+    const dogeWrapper = document.getElementById('dogeWrapper');
     const doge = document.getElementById('doge');
     const statusBar = document.getElementById('statusBar');
-    const { ipcRenderer } = require('electron');
+    const hint = document.getElementById('hint');
+    
+    // 隐藏提示
+    setTimeout(() => {
+      hint.style.opacity = '0';
+      setTimeout(() => hint.remove(), 300);
+    }, 3000);
     
     // 双击打开聊天窗口
-    doge.addEventListener('dblclick', () => {
+    dogeWrapper.addEventListener('dblclick', () => {
       ipcRenderer.send('open-chat');
     });
     
     // 监听 Python 消息
     ipcRenderer.on('python-message', (event, message) => {
-      console.log('收到 Python 消息:', message);
-      
       if (message.type === 'ready') {
         statusBar.textContent = '🐶 已就绪';
+        hint.style.opacity = '0';
+        setTimeout(() => hint.remove(), 300);
+      }
+      
+      if (message.type === 'chat_response') {
+        const data = message.data;
+        if (data.status === 'success') {
+          setAnimation('speaking');
+          setTimeout(() => setAnimation('idle'), 1000);
+        }
       }
     });
     
-    // 设置状态
     function setStatus(text) {
       statusBar.textContent = text;
     }
     
-    // 设置动画状态
     function setAnimation(state) {
       doge.className = 'doge ' + state;
     }
     
-    // 暴露给外部调用
     window.setDogeState = setAnimation;
     window.setStatus = setStatus;
+    
+    console.log('dogeAgent 已启动！拖动空白处移动窗口，双击狗子打开聊天');
   </script>
 </body>
 </html>

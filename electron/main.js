@@ -1,7 +1,7 @@
 /**
  * dogeAgent - Electron 主进程
  */
-const { app, BrowserWindow, Tray, Menu, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
 
@@ -21,13 +21,11 @@ function startPythonBridge() {
   
   pythonProcess.stdout.on('data', (data) => {
     console.log(`Python: ${data}`);
-    // 解析 JSON 消息
     try {
       const lines = data.toString().split('\n');
       lines.forEach(line => {
         if (line.trim()) {
           const message = JSON.parse(line);
-          // 转发到渲染进程
           if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('python-message', message);
           }
@@ -43,7 +41,7 @@ function startPythonBridge() {
   });
   
   pythonProcess.on('close', (code) => {
-    console.log(`Python 进程退出，代码: ${code}`);
+    console.log(`Python 进程退出，代码：${code}`);
   });
   
   return pythonProcess;
@@ -65,6 +63,8 @@ function createMainWindow() {
     frame: false,
     alwaysOnTop: true,
     hasShadow: false,
+    resizable: false,
+    movable: true, // 启用移动
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false
@@ -74,7 +74,6 @@ function createMainWindow() {
   mainWindow.loadFile(path.join(__dirname, 'pet.html'));
   mainWindow.setAlwaysOnTop(true, 'screen-saver');
   
-  // 双击打开聊天窗口
   mainWindow.on('double-click', () => {
     if (!chatWindow || chatWindow.isDestroyed()) {
       createChatWindow();
@@ -140,14 +139,9 @@ function createTray() {
 app.whenReady().then(() => {
   console.log('dogeAgent 启动中...');
   
-  // 启动 Python 桥接
   startPythonBridge();
-  
-  // 创建窗口
   createMainWindow();
-  
-  // 创建托盘
-  setTimeout(createTray, 1000); // 延迟创建，避免图标加载失败
+  setTimeout(createTray, 1000);
   
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -156,14 +150,12 @@ app.whenReady().then(() => {
   });
 });
 
-// 所有窗口关闭时
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
 });
 
-// 退出前清理
 app.on('will-quit', () => {
   if (pythonProcess) {
     pythonProcess.kill();
