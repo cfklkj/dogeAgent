@@ -180,7 +180,8 @@ class AgentFactory:
                             final_response = self.llm.invoke(messages)
                             return final_response.content
                         else:
-                            return "汪！请告诉我你想查哪个城市的天气呀？比如"北京天气"或"上海天气"~ 🐕"
+                            # 使用单引号避免转义问题
+                            return '汪！请告诉我你想查哪个城市的天气呀？比如"北京天气"或"上海天气"~ 🐕'
             
             # 没有工具调用，直接返回
             return response.content
