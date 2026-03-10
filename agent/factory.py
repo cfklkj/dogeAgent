@@ -3,6 +3,7 @@ Agent 工厂 - 创建和管理 LangChain Agent
 支持工具调用和核心文件加载
 """
 import logging
+import re
 from typing import Optional, Dict, Any, List, Tuple
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage
 from langchain_nvidia_ai_endpoints import ChatNVIDIA
@@ -113,6 +114,40 @@ class AgentFactory:
         self._init_llm()
         return True
     
+    def _extract_city(self, message: str) -> str:
+        """
+        从消息中提取城市名
+        
+        Args:
+            message: 用户消息
+        
+        Returns:
+            提取的城市名
+        """
+        # 常见城市列表（可扩展）
+        cities = [
+            '北京', '上海', '广州', '深圳', '成都', '杭州', '武汉', '西安',
+            '南京', '重庆', '天津', '苏州', '厦门', '青岛', '大连', '长沙',
+            '郑州', '沈阳', '哈尔滨', '福州', '南昌', '贵阳', '昆明', '南宁',
+            '海口', '三亚', '拉萨', '西宁', '银川', '乌鲁木齐', '呼和浩特',
+            '太原', '石家庄', '济南', '合肥', '长春', '龙岩', '赣州'
+        ]
+        
+        # 尝试从消息中匹配城市
+        for city in cities:
+            if city in message:
+                return city
+        
+        # 尝试用正则匹配"XX 的天气"格式
+        match = re.search(r'([一亩六〇 - 龠 A-Za-z]+) 的天气', message)
+        if match:
+            potential_city = match.group(1)
+            # 如果匹配到的不是"天气"本身
+            if potential_city and potential_city != '':
+                return potential_city
+        
+        return ""
+    
     def chat(self, message: str, history: List[Tuple[str, str]] = None) -> str:
         """
         与 Agent 对话（支持工具调用）
@@ -170,14 +205,12 @@ class AgentFactory:
                     # 执行工具
                     if tool_name == 'get_weather':
                         location = tool_args.get('location', '')
+                        
+                        # 如果工具调用没有提供位置，尝试从消息中提取
                         if not location:
-                            # 尝试从消息中提取位置
-                            if '龙岩' in message:
-                                location = '龙岩'
-                            elif '北京' in message:
-                                location = '北京'
-                            # ... 可以添加更多城市识别
-                            
+                            location = self._extract_city(message)
+                            logger.info(f"Extracted city from message: {location}")
+                        
                         if location:
                             from tools.weather_tool import get_weather_sync
                             tool_result = get_weather_sync(location)
