@@ -1,14 +1,21 @@
 """
 桥接服务 - Electron 与 Python 之间的通信
+注意：所有输出使用 UTF-8 编码，避免 Windows GBK 问题
 """
 import sys
 import os
 import json
 import logging
 import io
+import codecs
 from pathlib import Path
 from typing import Optional, Dict, Any
 from dotenv import load_dotenv
+
+# 强制设置标准输出为 UTF-8
+if sys.platform == 'win32':
+    sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer)
+    sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer)
 
 # 添加项目根目录到 Python 路径
 project_root = Path(__file__).parent.parent
@@ -22,19 +29,14 @@ load_dotenv(project_root / '.env')
 from agent.factory import get_agent, reset_agent
 from storage.session_store import session_store
 
-# 配置日志 - 避免使用 emoji，使用 ASCII 字符
-class SafeStreamHandler(logging.StreamHandler):
-    """安全的日志处理器 - 避免编码问题"""
+# 配置日志 - 使用 UTF-8 编码
+class UTF8StreamHandler(logging.StreamHandler):
+    """UTF-8 编码的日志处理器"""
     def emit(self, record):
         try:
             msg = self.format(record)
-            # 确保消息可以安全编码
-            try:
-                msg.encode('utf-8')
-            except:
-                msg = msg.encode('utf-8', errors='replace').decode('utf-8')
-            
             stream = self.stream
+            # 使用 UTF-8 编码，错误替换
             stream.write(msg + self.terminator)
             self.flush()
         except (KeyboardInterrupt, SystemExit):
@@ -50,8 +52,8 @@ logger.setLevel(logging.INFO)
 # 清除现有处理器
 logger.handlers.clear()
 
-# 添加安全处理器
-handler = SafeStreamHandler()
+# 添加 UTF-8 处理器
+handler = UTF8StreamHandler()
 handler.setFormatter(logging.Formatter(
     '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 ))
@@ -61,7 +63,7 @@ logger.addHandler(handler)
 root_logger = logging.getLogger()
 root_logger.setLevel(logging.INFO)
 root_logger.handlers.clear()
-root_handler = SafeStreamHandler()
+root_handler = UTF8StreamHandler()
 root_handler.setFormatter(logging.Formatter(
     '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 ))
@@ -168,8 +170,13 @@ def main():
     logger.info("Bridge Service starting...")
     
     # 发送启动消息 - 使用 ensure_ascii=False
-    print(json.dumps({"type": "ready", "message": "Bridge Service ready"}, ensure_ascii=False))
-    sys.stdout.flush()
+    try:
+        print(json.dumps({"type": "ready", "message": "Bridge Service ready"}, ensure_ascii=False))
+        sys.stdout.flush()
+    except Exception as e:
+        # 如果 UTF-8 失败，回退到 ASCII
+        print(json.dumps({"type": "ready", "message": "Bridge Service ready"}, ensure_ascii=True))
+        sys.stdout.flush()
     
     # 主循环
     for line in sys.stdin:
@@ -201,23 +208,40 @@ def main():
                 result = {"status": "error", "message": f"Unknown message type: {msg_type}"}
             
             # 返回结果 - 使用 ensure_ascii=False
-            response = {
-                "type": f"{msg_type}_response",
-                "data": result
-            }
-            print(json.dumps(response, ensure_ascii=False))
-            sys.stdout.flush()
+            try:
+                response = {
+                    "type": f"{msg_type}_response",
+                    "data": result
+                }
+                print(json.dumps(response, ensure_ascii=False))
+                sys.stdout.flush()
+            except:
+                # 如果包含 emoji 的消息失败，使用 ensure_ascii=True
+                response = {
+                    "type": f"{msg_type}_response",
+                    "data": result
+                }
+                print(json.dumps(response, ensure_ascii=True))
+                sys.stdout.flush()
             
         except json.JSONDecodeError as e:
             logger.error(f"JSON decode error: {e}")
         except Exception as e:
             logger.error(f"Message processing failed: {e}")
-            error_response = {
-                "type": "error",
-                "data": {"status": "error", "message": str(e)}
-            }
-            print(json.dumps(error_response, ensure_ascii=False))
-            sys.stdout.flush()
+            try:
+                error_response = {
+                    "type": "error",
+                    "data": {"status": "error", "message": str(e)}
+                }
+                print(json.dumps(error_response, ensure_ascii=False))
+                sys.stdout.flush()
+            except:
+                error_response = {
+                    "type": "error",
+                    "data": {"status": "error", "message": str(e)}
+                }
+                print(json.dumps(error_response, ensure_ascii=True))
+                sys.stdout.flush()
 
 if __name__ == "__main__":
     main()
