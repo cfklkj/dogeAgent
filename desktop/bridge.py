@@ -8,6 +8,7 @@ import json
 import logging
 import io
 import tempfile
+import time
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple
 from dotenv import load_dotenv
@@ -87,7 +88,7 @@ class BridgeService:
             old_status: 旧状态
             new_status: 新状态
         """
-        logger.info(f"状态变化回调：{old_status} -> {new_status}")
+        logger.info(f"[状态回调] {old_status} -> {new_status}")
         # 状态变化时主动推送
         self._push_status_update()
     
@@ -101,7 +102,7 @@ class BridgeService:
             # 更新 last_status 以便后续检测变化
             self.last_status = current_status
             
-            logger.info(f"推送状态更新：{current_status}")
+            logger.info(f"[状态推送] {current_status}")
             send_response({
                 "type": "status_update",
                 "data": {
@@ -110,15 +111,15 @@ class BridgeService:
                 }
             })
         except Exception as e:
-            logger.error(f"推送状态更新失败：{e}")
+            logger.error(f"[状态推送失败] {e}")
     
     def init_agent(self, provider: str = None) -> Dict[str, Any]:
         """初始化 Agent"""
         try:
-            logger.info(f"Starting to initialize Agent, provider: {provider}")
+            logger.info(f"[初始化] 开始初始化 Agent, provider: {provider}")
             self.provider = provider
             self.agent = get_agent(provider)
-            logger.info("Agent initialized successfully")
+            logger.info("Agent 初始化成功")
             
             # 初始化完成后，推送一次状态
             self._push_status_update()
@@ -128,7 +129,7 @@ class BridgeService:
                 "message": "Agent 初始化成功"
             }
         except Exception as e:
-            logger.error(f"Agent initialization failed: {e}", exc_info=True)
+            logger.error(f"[初始化失败] {e}", exc_info=True)
             return {
                 "status": "error",
                 "message": f"Agent 初始化失败：{str(e)}"
@@ -138,19 +139,19 @@ class BridgeService:
         """与 Agent 对话"""
         try:
             if not self.agent:
-                logger.warning("Agent not initialized, auto-initializing...")
+                logger.warning("Agent 未初始化，自动初始化...")
                 self.init_agent()
             
-            logger.info(f"Processing message: {message[:50]}...")
+            logger.info(f"[聊天] 收到消息：{message[:50]}...")
             response = self.agent.chat(message, history)
-            logger.info(f"Response generated: {response[:50]}...")
+            logger.info(f"[聊天] 回复：{response[:50]}...")
             
             return {
                 "status": "success",
                 "response": response
             }
         except Exception as e:
-            logger.error(f"Chat failed: {e}", exc_info=True)
+            logger.error(f"[聊天失败] {e}", exc_info=True)
             return {
                 "status": "error",
                 "message": f"对话失败：{str(e)}"
@@ -167,25 +168,39 @@ class BridgeService:
         Returns:
             包含音频文件路径的字典
         """
+        start_time = time.time()
+        logger.info(f"[TTS 请求] 开始处理，文本：{text[:50]}..., 音色：{voice}")
+        
         try:
             from tools.tts_tool import text_to_speech as tts
             
             # 生成临时文件
             temp_dir = tempfile.gettempdir()
-            output_file = os.path.join(temp_dir, f"doge_tts_{hash(text)}.mp3")
+            timestamp = int(time.time() * 1000)
+            output_file = os.path.join(temp_dir, f"doge_tts_{timestamp}.mp3")
             
-            logger.info(f"开始 TTS 转换：{text[:50]}...")
+            logger.info(f"[TTS] 输出文件：{output_file}")
+            
+            # 调用 TTS
             tts(text, output_file, voice=voice)
             
-            logger.info(f"TTS 完成：{output_file}")
+            # 验证文件
+            if os.path.exists(output_file):
+                file_size = os.path.getsize(output_file)
+                duration = time.time() - start_time
+                logger.info(f"[TTS 完成] 文件：{output_file}, 大小：{file_size}字节，耗时：{duration:.2f}秒")
+            else:
+                logger.error(f"[TTS 失败] 文件未生成：{output_file}")
             
             return {
                 "status": "success",
                 "audio_file": output_file,
-                "text": text
+                "text": text,
+                "file_size": os.path.getsize(output_file) if os.path.exists(output_file) else 0
             }
         except Exception as e:
-            logger.error(f"TTS 失败：{e}", exc_info=True)
+            duration = time.time() - start_time
+            logger.error(f"[TTS 失败] 耗时：{duration:.2f}秒，错误：{e}", exc_info=True)
             return {
                 "status": "error",
                 "message": f"TTS 失败：{str(e)}"
@@ -200,11 +215,11 @@ class BridgeService:
                     "message": "Agent 未初始化"
                 }
             
-            logger.info(f"Switching provider to: {provider}")
+            logger.info(f"[切换] 切换到：{provider}")
             success = self.agent.switch_provider(provider)
             
             if success:
-                logger.info(f"Provider switched to: {provider}")
+                logger.info(f"[切换成功] {provider}")
                 # 切换后推送状态
                 self._push_status_update()
                 return {
@@ -217,7 +232,7 @@ class BridgeService:
                     "message": "切换失败"
                 }
         except Exception as e:
-            logger.error(f"Switch provider failed: {e}", exc_info=True)
+            logger.error(f"[切换失败] {e}", exc_info=True)
             return {
                 "status": "error",
                 "message": str(e)
@@ -233,7 +248,7 @@ class BridgeService:
             current_status = status_dict.get('status')
             if current_status != self.last_status:
                 self.last_status = current_status
-                logger.debug(f"状态变化：{current_status}")
+                logger.debug(f"[状态查询] 状态变化：{current_status}")
                 # 主动推送状态更新
                 send_response({
                     "type": "status_update",
@@ -248,7 +263,7 @@ class BridgeService:
                 "data": status_dict
             }
         except Exception as e:
-            logger.error(f"Get status failed: {e}", exc_info=True)
+            logger.error(f"[状态查询失败] {e}", exc_info=True)
             return {
                 "status": "error",
                 "message": f"获取状态失败：{str(e)}"
@@ -262,7 +277,7 @@ class BridgeService:
             old_status: 旧状态
             new_status: 新状态
         """
-        logger.info(f"状态变化通知：{old_status} -> {new_status}")
+        logger.info(f"[状态变化通知] {old_status} -> {new_status}")
         try:
             state = get_state_manager()
             status_dict = state.get_status_dict()
@@ -274,24 +289,24 @@ class BridgeService:
                 }
             })
         except Exception as e:
-            logger.error(f"发送状态变化通知失败：{e}")
+            logger.error(f"[状态通知失败] {e}")
 
 def send_response(response: Dict[str, Any]):
     """发送响应到 Electron"""
     try:
         # 确保使用 UTF-8 编码
         json_str = json.dumps(response, ensure_ascii=False)
-        logger.debug(f"Sending response: {json_str[:100]}...")
+        logger.debug(f"[发送] {json_str[:100]}...")
         # 直接输出 UTF-8 字符串
         print(json_str, flush=True)
     except Exception as e:
-        logger.error(f"Failed to send response: {e}", exc_info=True)
+        logger.error(f"[发送失败] {e}", exc_info=True)
 
 def process_message(service: BridgeService, message: Dict[str, Any]):
     """处理接收到的消息"""
     try:
         msg_type = message.get("type")
-        logger.info(f"Received message type: {msg_type}")
+        logger.info(f"[接收] 类型：{msg_type}")
         
         if msg_type == "init":
             provider = message.get("provider")
@@ -307,6 +322,7 @@ def process_message(service: BridgeService, message: Dict[str, Any]):
         elif msg_type == "tts":
             text = message.get("text", "")
             voice = message.get("voice", "zh-CN-YunxiNeural")
+            logger.info(f"[TTS 请求] 文本：{text[:50]}..., 音色：{voice}")
             result = service.text_to_speech(text, voice)
             send_response({"type": "tts_response", "data": result})
         
@@ -320,14 +336,14 @@ def process_message(service: BridgeService, message: Dict[str, Any]):
             send_response({"type": "status_response", "data": result})
         
         else:
-            logger.warning(f"Unknown message type: {msg_type}")
+            logger.warning(f"[未知类型] {msg_type}")
             send_response({
                 "type": "error",
                 "data": {"message": f"未知消息类型：{msg_type}"}
             })
     
     except Exception as e:
-        logger.error(f"Error processing message: {e}", exc_info=True)
+        logger.error(f"[处理错误] {e}", exc_info=True)
         send_response({
             "type": "error",
             "data": {"message": f"处理消息失败：{str(e)}"}
@@ -335,11 +351,11 @@ def process_message(service: BridgeService, message: Dict[str, Any]):
 
 def main():
     """主函数"""
-    logger.info("Bridge Service starting...")
+    logger.info("Bridge Service 启动...")
     
     try:
         service = BridgeService()
-        logger.info("Bridge Service ready")
+        logger.info("Bridge Service 就绪")
         
         # 发送就绪信号
         send_response({"type": "ready", "message": "Bridge Service ready"})
@@ -351,27 +367,27 @@ def main():
                 if not line:
                     continue
                 
-                logger.debug(f"Received raw input: {line[:100]}...")
+                logger.debug(f"[原始输入] {line[:100]}...")
                 message = json.loads(line)
                 process_message(service, message)
             
             except json.JSONDecodeError as e:
-                logger.error(f"JSON decode error: {e}")
+                logger.error(f"[JSON 错误] {e}")
                 send_response({
                     "type": "error",
                     "data": {"message": f"JSON 解析错误：{str(e)}"}
                 })
             except Exception as e:
-                logger.error(f"Error in main loop: {e}", exc_info=True)
+                logger.error(f"[主循环错误] {e}", exc_info=True)
                 send_response({
                     "type": "error",
                     "data": {"message": f"主循环错误：{str(e)}"}
                 })
     
     except KeyboardInterrupt:
-        logger.info("Bridge Service stopped by user")
+        logger.info("Bridge Service 被用户中断")
     except Exception as e:
-        logger.error(f"Bridge Service fatal error: {e}", exc_info=True)
+        logger.error(f"[致命错误] {e}", exc_info=True)
         sys.exit(1)
 
 if __name__ == "__main__":

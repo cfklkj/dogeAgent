@@ -7,12 +7,13 @@ import os
 import logging
 from pathlib import Path
 from typing import Optional
+from datetime import datetime
 
 logger = logging.getLogger("dogeAgent.tools.tts")
 
 # Edge TTS 支持的中文语音
 # zh-CN-YunxiNeural - 男声
-# zh-CN-YunxiNeural - 女声
+# zh-CN-YunxiNeural - 女声  
 # zh-CN-XiaoxiaoNeural - 女声（温暖）
 # zh-CN-YunyangNeural - 男声（专业）
 
@@ -36,19 +37,30 @@ async def text_to_speech_async(
     Returns:
         输出文件路径
     """
+    start_time = datetime.now()
+    logger.info(f"[TTS 开始] 文本：{text[:50]}... 音色：{voice}")
+    
     try:
         import edge_tts
         
-        logger.info(f"开始 TTS 转换：{text[:50]}...")
-        
+        logger.info(f"[TTS] 创建 Communicate 对象...")
         communicate = edge_tts.Communicate(text, voice, rate=rate, pitch=pitch)
+        
+        logger.info(f"[TTS] 开始保存到文件：{output_file}")
         await communicate.save(output_file)
         
-        logger.info(f"TTS 完成：{output_file}")
-        return output_file
+        # 验证文件是否生成
+        if os.path.exists(output_file):
+            file_size = os.path.getsize(output_file)
+            duration = (datetime.now() - start_time).total_seconds()
+            logger.info(f"[TTS 完成] 文件：{output_file}, 大小：{file_size}字节，耗时：{duration:.2f}秒")
+            return output_file
+        else:
+            logger.error(f"[TTS 失败] 文件未生成：{output_file}")
+            raise FileNotFoundError(f"TTS 文件未生成：{output_file}")
         
     except Exception as e:
-        logger.error(f"TTS 转换失败：{e}", exc_info=True)
+        logger.error(f"[TTS 错误] 转换失败：{e}", exc_info=True)
         raise
 
 def text_to_speech(
@@ -72,9 +84,10 @@ def text_to_speech(
         输出文件路径
     """
     try:
+        logger.info(f"[TTS 同步调用] 开始异步转换...")
         return asyncio.run(text_to_speech_async(text, output_file, voice, rate, pitch))
     except Exception as e:
-        logger.error(f"TTS 转换失败：{e}", exc_info=True)
+        logger.error(f"[TTS 同步错误] {e}", exc_info=True)
         raise
 
 def get_available_voices() -> list:
@@ -94,6 +107,8 @@ def get_available_voices() -> list:
 
 # 测试函数
 if __name__ == "__main__":
-    output = "test_output.mp3"
+    import tempfile
+    output = os.path.join(tempfile.gettempdir(), "test_output.mp3")
+    print(f"测试 TTS，输出文件：{output}")
     result = text_to_speech("你好，我是你的柴犬助手 Doge！", output)
     print(f"生成成功：{result}")
