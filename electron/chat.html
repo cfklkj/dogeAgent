@@ -187,7 +187,7 @@
     }
     #voiceBtn.recording::after {
       display: block;
-      content: '录音�?..';
+      content: '录音中...';
     }
     .clear-btn {
       padding: 8px 16px;
@@ -233,26 +233,26 @@
   <div class="header">
     <h1>🐶 dogeAgent</h1>
     <div class="status-bar">
-      <div class="status-item" id="connectionStatus" title="连接状�?>
+      <div class="status-item" id="connectionStatus" title="连接状态">
         <span class="status-dot" id="connectionDot"></span>
-        <span id="connectionText">连接�?..</span>
+        <span id="connectionText">连接中...</span>
       </div>
-      <div class="status-item" id="agentStatus" title="Agent 状�?>
+      <div class="status-item" id="agentStatus" title="Agent 状态">
         <span class="status-dot" id="agentDot"></span>
         <span id="agentText">初始化中</span>
       </div>
-      <button class="clear-btn" id="clearBtn" title="清空聊天记录">🗑�?/button>
+      <button class="clear-btn" id="clearBtn" title="清空聊天记录">🗑️</button>
     </div>
   </div>
   
   <div class="status-panel" id="statusPanel">
-    <h3>📊 Agent 状态详�?/h3>
+    <h3>📊 Agent 状态详情</h3>
     <div class="status-row">
-      <span class="status-label">状�?</span>
+      <span class="status-label">状态:</span>
       <span class="status-value" id="detailStatus">-</span>
     </div>
     <div class="status-row">
-      <span class="status-label">提供�?</span>
+      <span class="status-label">提供商:</span>
       <span class="status-value" id="detailProvider">-</span>
     </div>
     <div class="status-row">
@@ -260,15 +260,15 @@
       <span class="status-value" id="detailModel">-</span>
     </div>
     <div class="status-row">
-      <span class="status-label">消息�?</span>
+      <span class="status-label">消息数:</span>
       <span class="status-value" id="detailMessageCount">0</span>
     </div>
     <div class="status-row">
-      <span class="status-label">错误�?</span>
+      <span class="status-label">错误数:</span>
       <span class="status-value" id="detailErrorCount">0</span>
     </div>
     <div class="status-row">
-      <span class="status-label">最后更�?</span>
+      <span class="status-label">最后更新:</span>
       <span class="status-value" id="detailUpdateTime">-</span>
     </div>
   </div>
@@ -287,9 +287,9 @@
   </div>
   
   <div class="input-area">
-    <button id="voiceBtn" title="点击开始录音，再次点击停止并发�?>🎤</button>
+    <button id="voiceBtn" title="点击开始录音，再次点击停止并发送">🎤</button>
     <input type="text" id="userInput" placeholder="输入消息..." />
-    <button id="sendBtn">�?/button>
+    <button id="sendBtn">➤</button>
   </div>
 
   <script>
@@ -315,11 +315,9 @@
     let mediaRecorder = null;
     let audioChunks = [];
     let isRecording = false;
-    let speechRecognition = null;
-    let finalTranscript = '';
     let recordingStartTime = 0;
     
-    // 初始化语音录�?
+    // 初始化语音录制
     async function initVoiceRecording() {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ 
@@ -345,36 +343,28 @@
           audioChunks = [];
           
           const duration = Date.now() - recordingStartTime;
-          // ֹͣ����ʶ��
-          if (speechRecognition) { speechRecognition.stop(); }
-          // ʹ��ʶ����
-          if (finalTranscript && finalTranscript.trim()) {
-            userInput.value = finalTranscript.trim();
-            finalTranscript = '';
-            setTimeout(() => sendMessage(), 800);
-          } else {
-          console.log(`[语音] 录音时长�?{(duration / 1000).toFixed(2)}秒`);
+          console.log(`[语音] 录音时长：${(duration / 1000).toFixed(2)}秒`);
           
           // 转换为文本（使用 Web Speech API 的语音识别）
           await processRecording(audioBlob);
         };
         
-        console.log('[语音] 录音初始化成�?);
+        console.log('[语音] 录音初始化成功');
         return true;
       } catch (error) {
-        console.error('[语音] 初始化失�?', error);
-        alert('无法访问麦克风，请检查权限设�?);
+        console.error('[语音] 初始化失败:', error);
+        alert('无法访问麦克风，请检查权限设置');
         return false;
       }
     }
     
-    // 处理录音 - 使用浏览器原生语音识�?
+    // 处理录音 - 使用浏览器原生语音识别
     async function processRecording(audioBlob) {
-      // 简单方案：直接使用浏览器语音识�?
+      // 简单方案：直接使用浏览器语音识别
       // 如果需要更准确的识别，可以上传音频文件到服务端
-      console.log('[语音] 录音完成，大�?', audioBlob.size);
+      console.log('[语音] 录音完成，大小:', audioBlob.size);
       
-      // 由于浏览器限制，这里使用简单的方案�?
+      // 由于浏览器限制，这里使用简单的方案：
       // 1. 显示录音时长
       // 2. 提示用户输入文字
       const duration = (Date.now() - recordingStartTime) / 1000;
@@ -382,57 +372,52 @@
       userInput.value = placeholder + userInput.value;
       userInput.focus();
       
-      // 简单方案：让用户自己修改文字后发�?
+      // 简单方案：让用户自己修改文字后发送
       console.log('[语音] 请使用输入法输入文字，或继续录音');
     }
     
     // 点击语音按钮
     async function toggleVoiceRecording() {
-      // ��ʼ������ʶ��
-      initSpeechRecognition();
-      console.log('[语音] 按钮点击，当前状�?', isRecording ? '录音�? : '未录�?);
+      console.log('[语音] 按钮点击，当前状态:', isRecording ? '录音中' : '未录音');
       
       if (!isRecording) {
-        // 开始录�?
+        // 开始录音
         if (mediaRecorder && mediaRecorder.state === 'inactive') {
           audioChunks = [];
           try {
-            mediaRecorder.start(1000);
-            if (speechRecognition) { speechRecognition.start(); } // 每秒保存一�?
+            mediaRecorder.start(1000); // 每秒保存一次
             isRecording = true;
             recordingStartTime = Date.now();
             voiceBtn.classList.add('recording');
-            voiceBtn.title = '点击停止录音并发�?;
-            console.log('[语音] 开始录�?);
+            voiceBtn.title = '点击停止录音并发送';
+            console.log('[语音] 开始录音');
           } catch (error) {
-            console.error('[语音] 开始失�?', error);
+            console.error('[语音] 开始失败:', error);
           }
         } else if (mediaRecorder) {
           // 已经初始化过
           audioChunks = [];
           try {
             mediaRecorder.start(1000);
-            if (speechRecognition) { speechRecognition.start(); }
             isRecording = true;
             recordingStartTime = Date.now();
             voiceBtn.classList.add('recording');
-            voiceBtn.title = '点击停止录音并发�?;
-            console.log('[语音] 开始录�?(重新开�?');
+            voiceBtn.title = '点击停止录音并发送';
+            console.log('[语音] 开始录音 (重新开始)');
           } catch (error) {
-            console.error('[语音] 开始失�?', error);
+            console.error('[语音] 开始失败:', error);
           }
         } else {
-          // 首次初始�?
+          // 首次初始化
           const success = await initVoiceRecording();
           if (success) {
             audioChunks = [];
             mediaRecorder.start(1000);
-            if (speechRecognition) { speechRecognition.start(); }
             isRecording = true;
             recordingStartTime = Date.now();
             voiceBtn.classList.add('recording');
-            voiceBtn.title = '点击停止录音并发�?;
-            console.log('[语音] 初始化并开始录�?);
+            voiceBtn.title = '点击停止录音并发送';
+            console.log('[语音] 初始化并开始录音');
           }
         }
       } else {
@@ -441,7 +426,7 @@
           mediaRecorder.stop();
           isRecording = false;
           voiceBtn.classList.remove('recording');
-          voiceBtn.title = '点击开始录音，再次点击停止并发�?;
+          voiceBtn.title = '点击开始录音，再次点击停止并发送';
           console.log('[语音] 停止录音');
         }
       }
@@ -478,7 +463,7 @@
       const statusText = {
         'initializing': '初始化中',
         'ready': '就绪',
-        'busy': '忙碌�?,
+        'busy': '忙碌中',
         'error': '错误',
         'disconnected': '断开'
       }[status] || status || '未知';
@@ -494,7 +479,7 @@
         console.log('[状态] 开始忙碌，显示输入提示');
         showTypingIndicator(true);
       } else if (status !== 'busy' && lastKnownStatus === 'busy') {
-        console.log('[状态] 完成忙碌，隐藏输入提�?);
+        console.log('[状态] 完成忙碌，隐藏输入提示');
         showTypingIndicator(false);
       }
       lastKnownStatus = status || 'disconnected';
@@ -513,13 +498,13 @@
         const saved = localStorage.getItem(CHAT_HISTORY_KEY);
         if (saved) {
           chatHistory = JSON.parse(saved);
-          console.log(`[历史] 加载�?${chatHistory.length} 条记录`);
+          console.log(`[历史] 加载了 ${chatHistory.length} 条记录`);
           chatHistory.forEach(msg => {
             addMessageToDOM(msg.text, msg.isUser, msg.time, false);
           });
         } else {
           const welcomeMsg = {
-            text: '汪！我已经准备好了，可以开始聊天啦�?,
+            text: '汪！我已经准备好了，可以开始聊天啦！',
             isUser: false,
             time: new Date().toISOString()
           };
@@ -556,12 +541,12 @@
     }
     
     function clearHistory() {
-      if (confirm('确定要清空所有聊天记录吗�?)) {
+      if (confirm('确定要清空所有聊天记录吗？')) {
         chatHistory = [];
         localStorage.removeItem(CHAT_HISTORY_KEY);
         chatContainer.innerHTML = '';
         const welcomeMsg = {
-          text: '汪！聊天记录已清空，我们重新开始吧�?,
+          text: '汪！聊天记录已清空，我们重新开始吧！',
           isUser: false,
           time: new Date().toISOString()
         };
@@ -591,25 +576,25 @@
     
     function playAIResponse(text) {
       console.log('[TTS] 请求播放:', text.substring(0, 50) + '...');
-      // 简单方案：使用浏览器原�?TTS
+      // 简单方案：使用浏览器原生 TTS
       browserTTS(text);
     }
     
     function browserTTS(text) {
-      console.log('[TTS] 使用浏览器原�?TTS:', text.substring(0, 50) + '...');
+      console.log('[TTS] 使用浏览器原生 TTS:', text.substring(0, 50) + '...');
       try {
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.lang = 'zh-CN';
         utterance.rate = 1.0;
         utterance.pitch = 1.0;
         utterance.volume = 1.0;
-        utterance.onstart = () => { console.log('[TTS] 浏览�?TTS 开�?); };
-        utterance.onend = () => { console.log('[TTS] 浏览�?TTS 结束'); };
-        utterance.onerror = (event) => { console.error('[TTS] 浏览�?TTS 错误:', event); };
+        utterance.onstart = () => { console.log('[TTS] 浏览器 TTS 开始'); };
+        utterance.onend = () => { console.log('[TTS] 浏览器 TTS 结束'); };
+        utterance.onerror = (event) => { console.error('[TTS] 浏览器 TTS 错误:', event); };
         speechSynthesis.speak(utterance);
         return true;
       } catch (e) {
-        console.error('[TTS] 浏览�?TTS 失败:', e);
+        console.error('[TTS] 浏览器 TTS 失败:', e);
         return false;
       }
     }
@@ -623,7 +608,7 @@
           addMessage(data.response, false);
           playAIResponse(data.response);
         } else {
-          addMessage('�?..出错了：' + data.message, false);
+          addMessage('汪...出错了：' + data.message, false);
         }
       } else if (message.type === 'status_response' || message.type === 'status_update') {
         const data = message.data;
@@ -645,13 +630,13 @@
       console.log('[连接]', status);
       if (status === 'connected') {
         connectionDot.className = 'status-dot ready';
-        connectionText.textContent = '已连�?;
+        connectionText.textContent = '已连接';
       } else if (status === 'disconnected') {
         connectionDot.className = 'status-dot disconnected';
-        connectionText.textContent = '未连�?;
+        connectionText.textContent = '未连接';
       } else {
         connectionDot.className = 'status-dot';
-        connectionText.textContent = '连接�?..';
+        connectionText.textContent = '连接中...';
       }
     });
     
@@ -671,7 +656,7 @@
     
     agentStatusItem.addEventListener('click', () => {
       statusPanel.classList.toggle('show');
-      console.log('[界面] 切换状态面�?);
+      console.log('[界面] 切换状态面板');
     });
     
     document.addEventListener('click', (e) => {
@@ -680,10 +665,10 @@
       }
     });
     
-    // 初始�?
+    // 初始化
     loadHistory();
     console.log('dogeAgent 聊天窗口已启动！');
-    console.log('[语音] 点击麦克风按钮开始录�?);
+    console.log('[语音] 点击麦克风按钮开始录音');
   </script>
 </body>
 </html>
