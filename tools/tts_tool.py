@@ -57,9 +57,21 @@ async def text_to_speech_async(
             # 验证文件
             if os.path.exists(output_file):
                 file_size = os.path.getsize(output_file)
-                duration = time.time() - start_time
-                logger.info(f"[TTS 成功] 文件：{output_file}, 大小：{file_size}字节，耗时：{duration:.2f}秒")
-                return output_file
+                logger.info(f"[TTS] 文件大小：{file_size} 字节")
+                
+                # 检查文件大小是否有效（至少应该有几百字节）
+                if file_size > 100:
+                    duration = time.time() - start_time
+                    logger.info(f"[TTS 成功] 文件：{output_file}, 大小：{file_size}字节，耗时：{duration:.2f}秒")
+                    return output_file
+                else:
+                    logger.warning(f"[TTS 警告] 文件太小：{file_size} 字节，可能是空音频")
+                    # 删除无效文件
+                    try:
+                        os.remove(output_file)
+                        logger.debug(f"[TTS] 已删除无效文件：{output_file}")
+                    except:
+                        pass
             else:
                 logger.error(f"[TTS 失败] 文件未生成：{output_file}")
                 
@@ -75,7 +87,7 @@ async def text_to_speech_async(
     logger.error(f"[TTS 最终失败] 所有重试完成，错误：{last_error}")
     if last_error:
         raise last_error
-    raise RuntimeError("TTS 转换失败")
+    raise RuntimeError("TTS 转换失败：文件为空或无效")
 
 def text_to_speech(
     text: str,
@@ -102,7 +114,6 @@ def text_to_speech(
         return asyncio.run(text_to_speech_async(text, output_file, voice, rate, pitch))
     except Exception as e:
         logger.error(f"[TTS 同步错误] {e}", exc_info=True)
-        # 返回一个空的或备用文件
         raise
 
 def get_available_voices() -> list:

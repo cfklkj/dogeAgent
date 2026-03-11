@@ -190,8 +190,17 @@ class BridgeService:
                 with open(output_file, 'rb') as f:
                     audio_data = f.read()
                 
-                audio_base64 = base64.b64encode(audio_data).decode('utf-8')
                 file_size = len(audio_data)
+                
+                # 检查文件大小
+                if file_size < 100:
+                    logger.error(f"[TTS 失败] 文件太小：{file_size} 字节，可能是空音频")
+                    return {
+                        "status": "error",
+                        "message": "TTS 生成的音频文件为空"
+                    }
+                
+                audio_base64 = base64.b64encode(audio_data).decode('utf-8')
                 duration = time.time() - start_time
                 
                 logger.info(f"[TTS 完成] 大小：{file_size}字节，Base64 长度：{len(audio_base64)}, 耗时：{duration:.2f}秒")
@@ -220,9 +229,11 @@ class BridgeService:
         except Exception as e:
             duration = time.time() - start_time
             logger.error(f"[TTS 失败] 耗时：{duration:.2f}秒，错误：{e}", exc_info=True)
+            # 返回错误信息，前端使用浏览器原生 TTS
             return {
                 "status": "error",
-                "message": f"TTS 失败：{str(e)}"
+                "message": f"TTS 失败：{str(e)}",
+                "fallback": True  # 标记使用浏览器原生 TTS
             }
     
     def switch_provider(self, provider: str) -> Dict[str, Any]:
