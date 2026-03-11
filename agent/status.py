@@ -3,7 +3,7 @@ Agent 状态管理 - 管理 Agent 的生命周期状态
 """
 import logging
 from enum import Enum
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Callable
 from datetime import datetime
 
 logger = logging.getLogger("dogeAgent.agent.status")
@@ -42,9 +42,19 @@ class AgentStateManager:
         self.provider: Optional[str] = None
         self.model: Optional[str] = None
         self._last_status_change = None
+        self._on_status_change_callback: Optional[Callable] = None
         
         AgentStateManager._initialized = True
         logger.info("AgentStateManager initialized")
+    
+    def set_on_status_change(self, callback: Callable):
+        """
+        设置状态变化回调函数
+        
+        Args:
+            callback: 状态变化时的回调函数，接收 (old_status, new_status) 参数
+        """
+        self._on_status_change_callback = callback
     
     def _update_status(self, new_status: AgentStatus):
         """
@@ -65,6 +75,13 @@ class AgentStateManager:
                 'to': new_status.value,
                 'time': self.last_update.isoformat()
             }
+            
+            # 触发回调，通知状态变化
+            if self._on_status_change_callback:
+                try:
+                    self._on_status_change_callback(old_status.value, new_status.value)
+                except Exception as e:
+                    logger.error(f"状态变化回调执行失败：{e}")
     
     def set_initializing(self):
         """设置为初始化中"""
@@ -82,7 +99,7 @@ class AgentStateManager:
     
     def set_busy(self):
         """设置为忙碌中"""
-        if self.status == AgentStatus.READY:
+        if self.status != AgentStatus.BUSY:
             self._update_status(AgentStatus.BUSY)
             logger.info("Status: BUSY")
     

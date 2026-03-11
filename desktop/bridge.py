@@ -72,7 +72,45 @@ class BridgeService:
         self.agent = None
         self.provider = None
         self.last_status = None  # 记录上次发送的状态，避免重复发送
+        
+        # 设置状态变化回调
+        state = get_state_manager()
+        state.set_on_status_change(self._on_status_change)
+        
         logger.info("Bridge Service initialized")
+    
+    def _on_status_change(self, old_status: str, new_status: str):
+        """
+        状态变化回调函数
+        
+        Args:
+            old_status: 旧状态
+            new_status: 新状态
+        """
+        logger.info(f"状态变化回调：{old_status} -> {new_status}")
+        # 状态变化时主动推送
+        self._push_status_update()
+    
+    def _push_status_update(self):
+        """主动推送状态更新"""
+        try:
+            state = get_state_manager()
+            status_dict = state.get_status_dict()
+            current_status = status_dict.get('status')
+            
+            # 更新 last_status 以便后续检测变化
+            self.last_status = current_status
+            
+            logger.info(f"推送状态更新：{current_status}")
+            send_response({
+                "type": "status_update",
+                "data": {
+                    "status": "success",
+                    "data": status_dict
+                }
+            })
+        except Exception as e:
+            logger.error(f"推送状态更新失败：{e}")
     
     def init_agent(self, provider: str = None) -> Dict[str, Any]:
         """初始化 Agent"""
@@ -95,27 +133,6 @@ class BridgeService:
                 "status": "error",
                 "message": f"Agent 初始化失败：{str(e)}"
             }
-    
-    def _push_status_update(self):
-        """主动推送状态更新"""
-        try:
-            state = get_state_manager()
-            status_dict = state.get_status_dict()
-            current_status = status_dict.get('status')
-            
-            # 更新 last_status 以便后续检测变化
-            self.last_status = current_status
-            
-            logger.info(f"推送状态更新：{current_status}")
-            send_response({
-                "type": "status_update",
-                "data": {
-                    "status": "success",
-                    "data": status_dict
-                }
-            })
-        except Exception as e:
-            logger.error(f"推送状态更新失败：{e}")
     
     def chat(self, message: str, history: List[Tuple[str, str]] = None) -> Dict[str, Any]:
         """与 Agent 对话"""
