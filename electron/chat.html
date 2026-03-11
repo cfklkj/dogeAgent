@@ -446,19 +446,19 @@
           isListening = true;
           voiceBtn.classList.add('listening');
           voiceBtn.title = '正在监听...';
-          console.log('语音识别开始');
+          console.log('[语音] 识别开始');
         };
         
         recognition.onresult = (event) => {
           const transcript = event.results[0][0].transcript;
-          console.log('识别结果:', transcript);
+          console.log('[语音] 识别结果:', transcript);
           userInput.value = transcript;
           // 自动发送
           setTimeout(() => sendMessage(), 500);
         };
         
         recognition.onerror = (event) => {
-          console.error('语音识别错误:', event.error);
+          console.error('[语音] 错误:', event.error);
           isListening = false;
           voiceBtn.classList.remove('listening');
           voiceBtn.title = '语音输入';
@@ -468,12 +468,12 @@
           isListening = false;
           voiceBtn.classList.remove('listening');
           voiceBtn.title = '语音输入';
-          console.log('语音识别结束');
+          console.log('[语音] 识别结束');
         };
         
-        console.log('语音识别已初始化');
+        console.log('[语音] 语音识别已初始化');
       } else {
-        console.warn('浏览器不支持语音识别');
+        console.warn('[语音] 浏览器不支持语音识别');
         voiceBtn.style.display = 'none';
       }
     }
@@ -508,7 +508,7 @@
     
     // 更新 Agent 状态显示
     function updateAgentStatus(status, provider, model, messageCount, errorCount, lastUpdate) {
-      console.log('更新 Agent 状态:', { status, provider, model, messageCount, errorCount, lastUpdate });
+      console.log('[状态] 更新:', { status, provider, model, messageCount, errorCount, lastUpdate });
       
       // 更新状态点
       agentDot.className = `status-dot ${status || 'disconnected'}`;
@@ -534,10 +534,10 @@
       
       // 处理忙碌状态 - 显示输入提示
       if (status === 'busy' && lastKnownStatus !== 'busy') {
-        console.log('Agent 开始忙碌，显示输入提示');
+        console.log('[状态] 开始忙碌，显示输入提示');
         showTypingIndicator(true);
       } else if (status !== 'busy' && lastKnownStatus === 'busy') {
-        console.log('Agent 完成忙碌，隐藏输入提示');
+        console.log('[状态] 完成忙碌，隐藏输入提示');
         showTypingIndicator(false);
       }
       
@@ -549,7 +549,7 @@
       try {
         localStorage.setItem(CHAT_HISTORY_KEY, JSON.stringify(chatHistory));
       } catch (e) {
-        console.error('保存聊天历史失败:', e);
+        console.error('[历史] 保存失败:', e);
       }
     }
     
@@ -559,13 +559,11 @@
         const saved = localStorage.getItem(CHAT_HISTORY_KEY);
         if (saved) {
           chatHistory = JSON.parse(saved);
-          console.log(`加载了 ${chatHistory.length} 条聊天记录`);
-          // 重新渲染历史消息
+          console.log(`[历史] 加载了 ${chatHistory.length} 条记录`);
           chatHistory.forEach(msg => {
             addMessageToDOM(msg.text, msg.isUser, msg.time, false);
           });
         } else {
-          // 没有历史记录，添加欢迎消息
           const welcomeMsg = {
             text: '汪！我已经准备好了，可以开始聊天啦！',
             isUser: false,
@@ -576,7 +574,7 @@
           saveHistory();
         }
       } catch (e) {
-        console.error('加载聊天历史失败:', e);
+        console.error('[历史] 加载失败:', e);
       }
     }
     
@@ -605,8 +603,6 @@
       messageDiv.appendChild(contentDiv);
       messageDiv.appendChild(timeDiv);
       chatContainer.appendChild(messageDiv);
-      
-      // 滚动到底部
       chatContainer.scrollTop = chatContainer.scrollHeight;
     }
     
@@ -616,7 +612,6 @@
         chatHistory = [];
         localStorage.removeItem(CHAT_HISTORY_KEY);
         chatContainer.innerHTML = '';
-        // 添加新的欢迎消息
         const welcomeMsg = {
           text: '汪！聊天记录已清空，我们重新开始吧！',
           isUser: false,
@@ -632,10 +627,7 @@
     function sendMessage() {
       const message = userInput.value.trim();
       if (message) {
-        // 添加用户消息
         addMessage(message, true);
-        
-        // 发送到 Python
         ipcRenderer.send('send-to-python', {
           type: 'chat',
           payload: {
@@ -646,13 +638,14 @@
             }))
           }
         });
-        
         userInput.value = '';
       }
     }
     
-    // TTS：播放 AI 回复
+    // TTS：播放 AI 回复（使用 Base64 音频）
     function playAIResponse(text) {
+      console.log('[TTS] 请求播放:', text.substring(0, 50) + '...');
+      
       // 发送到 Python 进行 TTS 转换
       ipcRenderer.send('send-to-python', {
         type: 'tts',
@@ -663,9 +656,24 @@
       });
     }
     
+    // 播放 Base64 音频
+    function playBase64Audio(base64Data, mimeType = 'audio/mpeg') {
+      try {
+        console.log('[TTS] 播放音频，大小:', base64Data.length);
+        const audio = new Audio(`data:${mimeType};base64,${base64Data}`);
+        audio.play().then(() => {
+          console.log('[TTS] 播放开始');
+        }).catch(err => {
+          console.error('[TTS] 播放失败:', err);
+        });
+      } catch (e) {
+        console.error('[TTS] 播放错误:', e);
+      }
+    }
+    
     // 监听 Python 响应
     ipcRenderer.on('python-message', (event, message) => {
-      console.log('收到 Python 消息:', message);
+      console.log('[接收]', message.type, message);
       
       if (message.type === 'chat_response') {
         const data = message.data;
@@ -680,16 +688,15 @@
         // TTS 响应
         const ttsData = message.data;
         if (ttsData.status === 'success') {
-          console.log('TTS 完成，播放音频:', ttsData.audio_file);
-          // 这里需要通过 Electron 读取文件并播放
-          // 暂时使用浏览器原生 TTS 作为备选
-          const utterance = new SpeechSynthesisUtterance(ttsData.text);
-          utterance.lang = 'zh-CN';
-          speechSynthesis.speak(utterance);
+          console.log('[TTS] 收到音频数据，大小:', ttsData.file_size);
+          // 播放 Base64 音频
+          if (ttsData.audio_base64) {
+            playBase64Audio(ttsData.audio_base64, ttsData.mime_type);
+          }
+        } else {
+          console.error('[TTS] 失败:', ttsData.message);
         }
       } else if (message.type === 'status_response') {
-        // 处理状态响应（初始查询）
-        console.log('收到状态响应:', message.data);
         const data = message.data;
         if (data && data.status === 'success' && data.data) {
           const statusData = data.data;
@@ -703,8 +710,6 @@
           );
         }
       } else if (message.type === 'status_update') {
-        // 处理状态更新推送（事件驱动）
-        console.log('收到状态更新推送:', message.data);
         const data = message.data;
         if (data && data.status === 'success' && data.data) {
           const statusData = data.data;
@@ -722,7 +727,7 @@
     
     // 连接状态
     ipcRenderer.on('connection-status', (event, status) => {
-      console.log('连接状态变化:', status);
+      console.log('[连接]', status);
       if (status === 'connected') {
         connectionDot.className = 'status-dot ready';
         connectionText.textContent = '已连接';
@@ -768,7 +773,7 @@
     // 点击 Agent 状态显示详情
     agentStatusItem.addEventListener('click', () => {
       statusPanel.classList.toggle('show');
-      console.log('切换状态面板显示');
+      console.log('[界面] 切换状态面板');
     });
     
     // 点击其他地方关闭状态面板

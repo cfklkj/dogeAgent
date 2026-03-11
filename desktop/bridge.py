@@ -9,6 +9,7 @@ import logging
 import io
 import tempfile
 import time
+import base64
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple
 from dotenv import load_dotenv
@@ -159,14 +160,14 @@ class BridgeService:
     
     def text_to_speech(self, text: str, voice: str = "zh-CN-YunxiNeural") -> Dict[str, Any]:
         """
-        文字转语音
+        文字转语音（返回 Base64 编码的音频数据）
         
         Args:
             text: 要转换的文本
             voice: 语音音色
         
         Returns:
-            包含音频文件路径的字典
+            包含音频 Base64 数据的字典
         """
         start_time = time.time()
         logger.info(f"[TTS 请求] 开始处理，文本：{text[:50]}..., 音色：{voice}")
@@ -184,20 +185,38 @@ class BridgeService:
             # 调用 TTS
             tts(text, output_file, voice=voice)
             
-            # 验证文件
+            # 读取文件并转换为 Base64
             if os.path.exists(output_file):
-                file_size = os.path.getsize(output_file)
+                with open(output_file, 'rb') as f:
+                    audio_data = f.read()
+                
+                audio_base64 = base64.b64encode(audio_data).decode('utf-8')
+                file_size = len(audio_data)
                 duration = time.time() - start_time
-                logger.info(f"[TTS 完成] 文件：{output_file}, 大小：{file_size}字节，耗时：{duration:.2f}秒")
+                
+                logger.info(f"[TTS 完成] 大小：{file_size}字节，Base64 长度：{len(audio_base64)}, 耗时：{duration:.2f}秒")
+                
+                # 清理临时文件
+                try:
+                    os.remove(output_file)
+                    logger.debug(f"[TTS] 清理临时文件：{output_file}")
+                except Exception as e:
+                    logger.warning(f"[TTS] 清理文件失败：{e}")
+                
+                return {
+                    "status": "success",
+                    "audio_base64": audio_base64,
+                    "text": text,
+                    "file_size": file_size,
+                    "mime_type": "audio/mpeg"
+                }
             else:
                 logger.error(f"[TTS 失败] 文件未生成：{output_file}")
-            
-            return {
-                "status": "success",
-                "audio_file": output_file,
-                "text": text,
-                "file_size": os.path.getsize(output_file) if os.path.exists(output_file) else 0
-            }
+                return {
+                    "status": "error",
+                    "message": "TTS 文件未生成"
+                }
+                
         except Exception as e:
             duration = time.time() - start_time
             logger.error(f"[TTS 失败] 耗时：{duration:.2f}秒，错误：{e}", exc_info=True)
