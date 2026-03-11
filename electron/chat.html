@@ -203,6 +203,7 @@
       backdrop-filter: blur(10px);
       display: flex;
       gap: 10px;
+      align-items: center;
     }
     
     #userInput {
@@ -238,6 +239,28 @@
     
     #sendBtn:active {
       transform: scale(0.95);
+    }
+    
+    #voiceBtn {
+      width: 50px;
+      height: 50px;
+      border: none;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.2);
+      color: white;
+      font-size: 20px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    
+    #voiceBtn:hover {
+      background: rgba(255, 255, 255, 0.3);
+      transform: scale(1.05);
+    }
+    
+    #voiceBtn.listening {
+      background: #ef4444;
+      animation: pulse 1s infinite;
     }
     
     .typing {
@@ -376,6 +399,7 @@
   </div>
   
   <div class="input-area">
+    <button id="voiceBtn" title="语音输入">🎤</button>
     <input type="text" id="userInput" placeholder="输入消息..." />
     <button id="sendBtn">➤</button>
   </div>
@@ -385,6 +409,7 @@
     const chatContainer = document.getElementById('chatContainer');
     const userInput = document.getElementById('userInput');
     const sendBtn = document.getElementById('sendBtn');
+    const voiceBtn = document.getElementById('voiceBtn');
     const connectionDot = document.getElementById('connectionDot');
     const connectionText = document.getElementById('connectionText');
     const agentDot = document.getElementById('agentDot');
@@ -403,6 +428,55 @@
     // 状态追踪
     let lastKnownStatus = 'initializing';
     let statusPolling = null;
+    
+    // 语音识别
+    let recognition = null;
+    let isListening = false;
+    
+    // 初始化语音识别
+    function initSpeechRecognition() {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        recognition = new SpeechRecognition();
+        recognition.lang = 'zh-CN';
+        recognition.continuous = false;
+        recognition.interimResults = false;
+        
+        recognition.onstart = () => {
+          isListening = true;
+          voiceBtn.classList.add('listening');
+          voiceBtn.title = '正在监听...';
+          console.log('语音识别开始');
+        };
+        
+        recognition.onresult = (event) => {
+          const transcript = event.results[0][0].transcript;
+          console.log('识别结果:', transcript);
+          userInput.value = transcript;
+          // 自动发送
+          setTimeout(() => sendMessage(), 500);
+        };
+        
+        recognition.onerror = (event) => {
+          console.error('语音识别错误:', event.error);
+          isListening = false;
+          voiceBtn.classList.remove('listening');
+          voiceBtn.title = '语音输入';
+        };
+        
+        recognition.onend = () => {
+          isListening = false;
+          voiceBtn.classList.remove('listening');
+          voiceBtn.title = '语音输入';
+          console.log('语音识别结束');
+        };
+        
+        console.log('语音识别已初始化');
+      } else {
+        console.warn('浏览器不支持语音识别');
+        voiceBtn.style.display = 'none';
+      }
+    }
     
     // 格式化时间
     function formatTime(date) {
@@ -577,6 +651,18 @@
       }
     }
     
+    // TTS：播放 AI 回复
+    function playAIResponse(text) {
+      // 发送到 Python 进行 TTS 转换
+      ipcRenderer.send('send-to-python', {
+        type: 'tts',
+        payload: {
+          text: text,
+          voice: 'zh-CN-YunxiNeural'
+        }
+      });
+    }
+    
     // 监听 Python 响应
     ipcRenderer.on('python-message', (event, message) => {
       console.log('收到 Python 消息:', message);
@@ -585,8 +671,21 @@
         const data = message.data;
         if (data.status === 'success') {
           addMessage(data.response, false);
+          // 播放 AI 回复
+          playAIResponse(data.response);
         } else {
           addMessage('汪...出错了：' + data.message, false);
+        }
+      } else if (message.type === 'tts_response') {
+        // TTS 响应
+        const ttsData = message.data;
+        if (ttsData.status === 'success') {
+          console.log('TTS 完成，播放音频:', ttsData.audio_file);
+          // 这里需要通过 Electron 读取文件并播放
+          // 暂时使用浏览器原生 TTS 作为备选
+          const utterance = new SpeechSynthesisUtterance(ttsData.text);
+          utterance.lang = 'zh-CN';
+          speechSynthesis.speak(utterance);
         }
       } else if (message.type === 'status_response') {
         // 处理状态响应（初始查询）
@@ -627,11 +726,9 @@
       if (status === 'connected') {
         connectionDot.className = 'status-dot ready';
         connectionText.textContent = '已连接';
-        // 连接成功后不轮询，等待状态更新推送
       } else if (status === 'disconnected') {
         connectionDot.className = 'status-dot disconnected';
         connectionText.textContent = '未连接';
-        // 停止轮询（如果有的话）
         if (statusPolling) {
           clearInterval(statusPolling);
           statusPolling = null;
@@ -644,6 +741,19 @@
     
     // 发送按钮
     sendBtn.addEventListener('click', sendMessage);
+    
+    // 语音按钮
+    voiceBtn.addEventListener('click', () => {
+      if (recognition) {
+        if (isListening) {
+          recognition.stop();
+        } else {
+          recognition.start();
+        }
+      } else {
+        alert('您的浏览器不支持语音识别功能');
+      }
+    });
     
     // 回车发送
     userInput.addEventListener('keypress', (e) => {
@@ -668,7 +778,8 @@
       }
     });
     
-    // 窗口加载时加载历史记录
+    // 初始化
+    initSpeechRecognition();
     loadHistory();
     
     console.log('dogeAgent 聊天窗口已启动！');

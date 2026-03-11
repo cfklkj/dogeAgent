@@ -7,7 +7,7 @@ import os
 import json
 import logging
 import io
-import codecs
+import tempfile
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple
 from dotenv import load_dotenv
@@ -156,6 +156,41 @@ class BridgeService:
                 "message": f"对话失败：{str(e)}"
             }
     
+    def text_to_speech(self, text: str, voice: str = "zh-CN-YunxiNeural") -> Dict[str, Any]:
+        """
+        文字转语音
+        
+        Args:
+            text: 要转换的文本
+            voice: 语音音色
+        
+        Returns:
+            包含音频文件路径的字典
+        """
+        try:
+            from tools.tts_tool import text_to_speech as tts
+            
+            # 生成临时文件
+            temp_dir = tempfile.gettempdir()
+            output_file = os.path.join(temp_dir, f"doge_tts_{hash(text)}.mp3")
+            
+            logger.info(f"开始 TTS 转换：{text[:50]}...")
+            tts(text, output_file, voice=voice)
+            
+            logger.info(f"TTS 完成：{output_file}")
+            
+            return {
+                "status": "success",
+                "audio_file": output_file,
+                "text": text
+            }
+        except Exception as e:
+            logger.error(f"TTS 失败：{e}", exc_info=True)
+            return {
+                "status": "error",
+                "message": f"TTS 失败：{str(e)}"
+            }
+    
     def switch_provider(self, provider: str) -> Dict[str, Any]:
         """切换模型提供商"""
         try:
@@ -268,6 +303,12 @@ def process_message(service: BridgeService, message: Dict[str, Any]):
             history = message.get("history", [])
             result = service.chat(user_message, history)
             send_response({"type": "chat_response", "data": result})
+        
+        elif msg_type == "tts":
+            text = message.get("text", "")
+            voice = message.get("voice", "zh-CN-YunxiNeural")
+            result = service.text_to_speech(text, voice)
+            send_response({"type": "tts_response", "data": result})
         
         elif msg_type == "switch_provider":
             provider = message.get("provider")
