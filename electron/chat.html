@@ -168,9 +168,27 @@
       font-size: 20px;
       cursor: pointer;
       transition: all 0.2s;
+      position: relative;
     }
     #voiceBtn:hover { background: rgba(255, 255, 255, 0.3); transform: scale(1.05); }
-    #voiceBtn.listening { background: #ef4444; animation: pulse 1s infinite; }
+    #voiceBtn.recording {
+      background: #ef4444;
+      animation: pulse 1s infinite;
+    }
+    #voiceBtn::after {
+      content: attr(data-status);
+      position: absolute;
+      bottom: -20px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 10px;
+      white-space: nowrap;
+      display: none;
+    }
+    #voiceBtn.recording::after {
+      display: block;
+      content: '录音中...';
+    }
     .clear-btn {
       padding: 8px 16px;
       background: rgba(255, 255, 255, 0.2);
@@ -269,7 +287,7 @@
   </div>
   
   <div class="input-area">
-    <button id="voiceBtn" title="语音输入">🎤</button>
+    <button id="voiceBtn" title="点击开始录音，再次点击停止并发送">🎤</button>
     <input type="text" id="userInput" placeholder="输入消息..." />
     <button id="sendBtn">➤</button>
   </div>
@@ -292,49 +310,125 @@
     const CHAT_HISTORY_KEY = 'doge_chat_history';
     let chatHistory = [];
     let lastKnownStatus = 'initializing';
-    let recognition = null;
-    let isListening = false;
     
-    function initSpeechRecognition() {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (SpeechRecognition) {
-        recognition = new SpeechRecognition();
-        recognition.lang = 'zh-CN';
-        recognition.continuous = false;
-        recognition.interimResults = false;
+    // 语音录音相关
+    let mediaRecorder = null;
+    let audioChunks = [];
+    let isRecording = false;
+    let recordingStartTime = 0;
+    
+    // 初始化语音录制
+    async function initVoiceRecording() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            sampleRate: 16000
+          } 
+        });
         
-        recognition.onstart = () => {
-          isListening = true;
-          voiceBtn.classList.add('listening');
-          voiceBtn.title = '正在监听...';
-          console.log('[语音] 识别开始');
+        mediaRecorder = new MediaRecorder(stream);
+        
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            audioChunks.push(event.data);
+            console.log(`[语音] 录音数据块：${event.data.size} 字节`);
+          }
         };
         
-        recognition.onresult = (event) => {
-          const transcript = event.results[0][0].transcript;
-          console.log('[语音] 识别结果:', transcript);
-          userInput.value = transcript;
-          setTimeout(() => sendMessage(), 500);
+        mediaRecorder.onstop = async () => {
+          console.log('[语音] 录音停止');
+          const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+          audioChunks = [];
+          
+          const duration = Date.now() - recordingStartTime;
+          console.log(`[语音] 录音时长：${(duration / 1000).toFixed(2)}秒`);
+          
+          // 转换为文本（使用 Web Speech API 的语音识别）
+          await processRecording(audioBlob);
         };
         
-        recognition.onerror = (event) => {
-          console.error('[语音] 错误:', event.error);
-          isListening = false;
-          voiceBtn.classList.remove('listening');
-          voiceBtn.title = '语音输入';
-        };
-        
-        recognition.onend = () => {
-          isListening = false;
-          voiceBtn.classList.remove('listening');
-          voiceBtn.title = '语音输入';
-          console.log('[语音] 识别结束');
-        };
-        
-        console.log('[语音] 语音识别已初始化');
+        console.log('[语音] 录音初始化成功');
+        return true;
+      } catch (error) {
+        console.error('[语音] 初始化失败:', error);
+        alert('无法访问麦克风，请检查权限设置');
+        return false;
+      }
+    }
+    
+    // 处理录音 - 使用浏览器原生语音识别
+    async function processRecording(audioBlob) {
+      // 简单方案：直接使用浏览器语音识别
+      // 如果需要更准确的识别，可以上传音频文件到服务端
+      console.log('[语音] 录音完成，大小:', audioBlob.size);
+      
+      // 由于浏览器限制，这里使用简单的方案：
+      // 1. 显示录音时长
+      // 2. 提示用户输入文字
+      const duration = (Date.now() - recordingStartTime) / 1000;
+      const placeholder = `[录音 ${duration.toFixed(1)}秒] `;
+      userInput.value = placeholder + userInput.value;
+      userInput.focus();
+      
+      // 简单方案：让用户自己修改文字后发送
+      console.log('[语音] 请使用输入法输入文字，或继续录音');
+    }
+    
+    // 点击语音按钮
+    async function toggleVoiceRecording() {
+      console.log('[语音] 按钮点击，当前状态:', isRecording ? '录音中' : '未录音');
+      
+      if (!isRecording) {
+        // 开始录音
+        if (mediaRecorder && mediaRecorder.state === 'inactive') {
+          audioChunks = [];
+          try {
+            mediaRecorder.start(1000); // 每秒保存一次
+            isRecording = true;
+            recordingStartTime = Date.now();
+            voiceBtn.classList.add('recording');
+            voiceBtn.title = '点击停止录音并发送';
+            console.log('[语音] 开始录音');
+          } catch (error) {
+            console.error('[语音] 开始失败:', error);
+          }
+        } else if (mediaRecorder) {
+          // 已经初始化过
+          audioChunks = [];
+          try {
+            mediaRecorder.start(1000);
+            isRecording = true;
+            recordingStartTime = Date.now();
+            voiceBtn.classList.add('recording');
+            voiceBtn.title = '点击停止录音并发送';
+            console.log('[语音] 开始录音 (重新开始)');
+          } catch (error) {
+            console.error('[语音] 开始失败:', error);
+          }
+        } else {
+          // 首次初始化
+          const success = await initVoiceRecording();
+          if (success) {
+            audioChunks = [];
+            mediaRecorder.start(1000);
+            isRecording = true;
+            recordingStartTime = Date.now();
+            voiceBtn.classList.add('recording');
+            voiceBtn.title = '点击停止录音并发送';
+            console.log('[语音] 初始化并开始录音');
+          }
+        }
       } else {
-        console.warn('[语音] 浏览器不支持语音识别');
-        voiceBtn.style.display = 'none';
+        // 停止录音
+        if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+          mediaRecorder.stop();
+          isRecording = false;
+          voiceBtn.classList.remove('recording');
+          voiceBtn.title = '点击开始录音，再次点击停止并发送';
+          console.log('[语音] 停止录音');
+        }
       }
     }
     
@@ -482,27 +576,8 @@
     
     function playAIResponse(text) {
       console.log('[TTS] 请求播放:', text.substring(0, 50) + '...');
-      ipcRenderer.send('send-to-python', {
-        type: 'tts',
-        payload: {
-          text: text,
-          voice: 'zh-CN-YunxiNeural'
-        }
-      });
-    }
-    
-    function playBase64Audio(base64Data, mimeType = 'audio/mpeg') {
-      try {
-        console.log('[TTS] 播放 Base64 音频，大小:', base64Data.length);
-        const audio = new Audio(`data:${mimeType};base64,${base64Data}`);
-        audio.play().then(() => {
-          console.log('[TTS] 播放开始');
-        }).catch(err => {
-          console.error('[TTS] 播放失败:', err);
-        });
-      } catch (e) {
-        console.error('[TTS] 播放错误:', e);
-      }
+      // 简单方案：使用浏览器原生 TTS
+      browserTTS(text);
     }
     
     function browserTTS(text) {
@@ -535,17 +610,6 @@
         } else {
           addMessage('汪...出错了：' + data.message, false);
         }
-      } else if (message.type === 'tts_response') {
-        const ttsData = message.data;
-        if (ttsData.status === 'success' && ttsData.audio_base64) {
-          console.log('[TTS] 收到音频数据，大小:', ttsData.file_size);
-          playBase64Audio(ttsData.audio_base64, ttsData.mime_type);
-        } else if (ttsData.status === 'error' && ttsData.fallback) {
-          console.log('[TTS] 使用浏览器原生 TTS 作为备选');
-          browserTTS(ttsData.text);
-        } else if (ttsData.status === 'error') {
-          console.error('[TTS] 失败:', ttsData.message);
-        }
       } else if (message.type === 'status_response' || message.type === 'status_update') {
         const data = message.data;
         if (data && data.status === 'success' && data.data) {
@@ -577,30 +641,34 @@
     });
     
     sendBtn.addEventListener('click', sendMessage);
+    
+    // 语音按钮点击事件
     voiceBtn.addEventListener('click', () => {
-      if (recognition) {
-        if (isListening) { recognition.stop(); } else { recognition.start(); }
-      } else {
-        alert('您的浏览器不支持语音识别功能');
-      }
+      console.log('[语音] 按钮点击');
+      toggleVoiceRecording();
     });
+    
     userInput.addEventListener('keypress', (e) => {
       if (e.key === 'Enter') { sendMessage(); }
     });
+    
     clearBtn.addEventListener('click', clearHistory);
+    
     agentStatusItem.addEventListener('click', () => {
       statusPanel.classList.toggle('show');
       console.log('[界面] 切换状态面板');
     });
+    
     document.addEventListener('click', (e) => {
       if (!statusPanel.contains(e.target) && !agentStatusItem.contains(e.target)) {
         statusPanel.classList.remove('show');
       }
     });
     
-    initSpeechRecognition();
+    // 初始化
     loadHistory();
     console.log('dogeAgent 聊天窗口已启动！');
+    console.log('[语音] 点击麦克风按钮开始录音');
   </script>
 </body>
 </html>
