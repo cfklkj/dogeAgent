@@ -81,6 +81,10 @@ class BridgeService:
             self.provider = provider
             self.agent = get_agent(provider)
             logger.info("Agent initialized successfully")
+            
+            # 初始化完成后，推送一次状态
+            self._push_status_update()
+            
             return {
                 "status": "success",
                 "message": "Agent 初始化成功"
@@ -91,6 +95,27 @@ class BridgeService:
                 "status": "error",
                 "message": f"Agent 初始化失败：{str(e)}"
             }
+    
+    def _push_status_update(self):
+        """主动推送状态更新"""
+        try:
+            state = get_state_manager()
+            status_dict = state.get_status_dict()
+            current_status = status_dict.get('status')
+            
+            # 更新 last_status 以便后续检测变化
+            self.last_status = current_status
+            
+            logger.info(f"推送状态更新：{current_status}")
+            send_response({
+                "type": "status_update",
+                "data": {
+                    "status": "success",
+                    "data": status_dict
+                }
+            })
+        except Exception as e:
+            logger.error(f"推送状态更新失败：{e}")
     
     def chat(self, message: str, history: List[Tuple[str, str]] = None) -> Dict[str, Any]:
         """与 Agent 对话"""
@@ -128,6 +153,8 @@ class BridgeService:
             
             if success:
                 logger.info(f"Provider switched to: {provider}")
+                # 切换后推送状态
+                self._push_status_update()
                 return {
                     "status": "success",
                     "message": f"已切换到 {provider}"
