@@ -344,8 +344,11 @@ def process_message(service: BridgeService, message: Dict[str, Any]):
             send_response({"type": "init_response", "data": result})
         
         elif msg_type == "chat":
-            user_message = message.get("message", "")
-            history = message.get("history", [])
+            # [修复] 处理 Electron 的消息结构：可能在 payload 里
+            payload = message.get("payload", message)  # 如果有 payload 就用 payload，否则用原消息
+            user_message = payload.get("message", "")
+            history = payload.get("history", [])
+            logger.info(f"[修复后] 用户消息：{user_message[:50] if user_message else '空'}")
             result = service.chat(user_message, history)
             send_response({"type": "chat_response", "data": result})
         

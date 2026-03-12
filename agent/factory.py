@@ -1,7 +1,4 @@
-"""
-Agent 工厂 - 创建和管理 LangChain Agent
-支持工具调用和核心文件加载
-"""
+""" Agent 工厂 - 创建和管理 LangChain Agent (强化版：强制工具调用) """
 import logging
 import re
 from typing import Optional, Dict, Any, List, Tuple
@@ -10,10 +7,8 @@ from langchain_nvidia_ai_endpoints import ChatNVIDIA
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.tools import tool
 from config.settings import (
-    NVIDIA_API_KEY, 
-    NVIDIA_BASE_URL, 
-    GOOGLE_API_KEY,
-    DEFAULT_MODEL_PROVIDER
+    NVIDIA_API_KEY, NVIDIA_BASE_URL, 
+    GOOGLE_API_KEY, DEFAULT_MODEL_PROVIDER
 )
 from models.config import MODEL_CONFIG
 from tools.tool_registry import get_all_tools
@@ -50,27 +45,27 @@ class AgentFactory:
         logger.info(f"AgentFactory 初始化完成，provider={self.provider}")
     
     def _get_default_prompt(self) -> str:
-        """获取默认系统提示词"""
+        """获取默认系统提示词（强化版：强制工具调用）"""
         return """你是一只可爱的柴犬宠物助手，名字叫 Doge。
 你友好、活泼、聪明，喜欢帮助用户。
-你的回答应该简洁、有趣，偶尔带点狗狗的可爱语气。
 
-你有查询天气的能力！当用户询问天气相关的问题时，你必须使用天气工具查询。
+【绝对指令：工具调用优先】
+1. 如果用户提到 **BTC, ETH, DOGE, 币价，价格，多少钱，分析，走势** 等关键词，**必须立即调用对应工具**！
+2. **严禁**在没调工具的情况下直接回复价格或分析！
+3. 如果不调用工具，就回答"本汪需要调用工具查询，请稍等..."
 
-天气相关问题示例：
-- "今天天气怎么样"
-- "天气如何"
-- "明天会下雨吗"
-- "未来三天龙岩的天气怎样"
-- "北京天气"
-- "上海今天下雨吗"
+【工具列表】
+- `get_crypto_price(symbol)`: 查询币价 (BTCUSDT, ETHUSDT, DOGEUSDT)
+- `analyze_crypto(symbol, interval)`: 分析走势
+- `get_weather(location)`: 查天气
+- `get_current_time()`: 查时间
+- `calculate(expression)`: 数学计算
 
-当你识别到天气相关的问题时：
-1. 立即调用天气工具查询
-2. 根据查询结果给出友好回复
-3. 如果用户没有指定城市，可以询问用户想查哪个城市
+【性格】
+- 自称"汪"或"本汪"，叫用户"主人"。
+- 语气活泼可爱，多用 emoji (🐕, 🐾, ✨)。
 
-如果不知道答案，诚实地告诉用户。
+如果不确定，就调用工具确认！
 """
     
     def _init_llm(self):
@@ -92,10 +87,12 @@ class AgentFactory:
                     temperature=0.7,
                     max_tokens=2048,
                 )
+                
                 # 绑定工具
                 if self.tools:
                     logger.info(f"绑定 {len(self.tools)} 个工具到 LLM")
                     self.llm = self.llm.bind_tools(self.tools)
+                
                 logger.info("NVIDIA LLM 初始化成功")
                 self.state.set_ready(provider="nvidia", model=MODEL_CONFIG["nvidia"]["model"])
                 
@@ -112,6 +109,7 @@ class AgentFactory:
                     temperature=0.7,
                     max_output_tokens=2048,
                 )
+                
                 logger.info("Google LLM 初始化成功")
                 self.state.set_ready(provider="google", model=MODEL_CONFIG["google"]["model"])
             else:
@@ -127,29 +125,19 @@ class AgentFactory:
         if provider not in MODEL_CONFIG:
             logger.error(f"不支持的模型提供商：{provider}")
             return False
-        
         self.provider = provider
         self._init_llm()
         return True
     
     def _extract_city(self, message: str) -> str:
         """从消息中提取城市名"""
-        # 常见城市列表
-        cities = [
-            '北京', '上海', '广州', '深圳', '成都', '杭州', '武汉', '西安',
-            '南京', '重庆', '天津', '苏州', '厦门', '青岛', '大连', '长沙',
-            '郑州', '沈阳', '哈尔滨', '福州', '南昌', '贵阳', '昆明', '南宁',
-            '海口', '三亚', '拉萨', '西宁', '银川', '乌鲁木齐', '呼和浩特',
-            '太原', '石家庄', '济南', '合肥', '长春', '龙岩', '赣州'
-        ]
+        cities = ['北京', '上海', '广州', '深圳', '成都', '杭州', '武汉', '西安', '南京', '重庆', '天津', '苏州', '厦门', '青岛', '大连', '长沙', '郑州', '沈阳', '哈尔滨', '福州', '南昌', '贵阳', '昆明', '南宁', '海口', '三亚', '拉萨', '西宁', '银川', '乌鲁木齐', '呼和浩特', '太原', '石家庄', '济南', '合肥', '长春', '龙岩', '赣州']
         
-        # 尝试从消息中匹配城市
         for city in cities:
             if city in message:
                 logger.debug(f"从城市列表中找到城市：{city}")
                 return city
         
-        # 尝试用正则匹配"XX 的天气"格式
         match = re.search(r'([一亩六〇 - 龠 A-Za-z]+) 的天气', message)
         if match:
             potential_city = match.group(1)
@@ -160,10 +148,58 @@ class AgentFactory:
         logger.debug("未找到城市")
         return ""
     
+    def _manual_tool_call(self, message: str) -> Optional[str]:
+        """
+        手动工具调用（后处理）：如果 LLM 没调工具，但用户问题明显需要工具，手动调用
+        """
+        msg_lower = message.lower()
+        
+        # 检查是否是币价查询
+        if any(k in msg_lower for k in ['btc', 'eth', 'doge', 'sol', 'bnb', 'xrp', 'ada', '币价', '价格', '多少钱', '比特币', '以太坊', '狗狗币']):
+            # 确定币种
+            symbol = 'BTCUSDT'
+            if 'eth' in msg_lower or '以太坊' in msg_lower:
+                symbol = 'ETHUSDT'
+            elif 'doge' in msg_lower or '狗狗币' in msg_lower:
+                symbol = 'DOGEUSDT'
+            elif 'sol' in msg_lower:
+                symbol = 'SOLUSDT'
+            elif 'bnb' in msg_lower:
+                symbol = 'BNBUSDT'
+            
+            logger.info(f"[手动调用] 检测到币价查询，手动调用 get_crypto_price({symbol})")
+            from agent.tools.crypto_data import crypto_tool
+            result = crypto_tool.get_price(symbol)
+            if result['success']:
+                return f"🐕 汪！{symbol} 当前价格：${result['price']} ({result['change_24h']}% 24h) | 高：${result['high_24h']} | 低：${result['low_24h']}"
+            else:
+                return f"❌ 获取价格失败：{result['error']}"
+        
+        # 检查是否是趋势分析
+        if any(k in msg_lower for k in ['分析', '走势', '趋势', '技术面', '行情']):
+            symbol = 'BTCUSDT'
+            if 'eth' in msg_lower or '以太坊' in msg_lower:
+                symbol = 'ETHUSDT'
+            elif 'doge' in msg_lower or '狗狗币' in msg_lower:
+                symbol = 'DOGEUSDT'
+            
+            logger.info(f"[手动调用] 检测到趋势分析，手动调用 analyze_crypto({symbol})")
+            from agent.tools.crypto_data import crypto_tool
+            from agent.tools.crypto_analysis import analysis_tool
+            klines = crypto_tool.get_klines(symbol, '1d', 100)
+            if klines['success']:
+                analysis = analysis_tool.analyze_trend(klines['klines'])
+                if analysis['success']:
+                    return f"📊 {symbol} 分析：趋势={analysis['trend']}, RSI={analysis['rsi']}, 总结={analysis['summary']}"
+                else:
+                    return f"❌ 分析失败：{analysis['error']}"
+            else:
+                return f"❌ 获取 K 线失败：{klines['error']}"
+        
+        return None
+    
     def chat(self, message: str, history: List[Tuple[str, str]] = None) -> str:
-        """
-        与 Agent 对话（支持工具调用）
-        """
+        """与 Agent 对话（支持工具调用 + 后处理）"""
         try:
             logger.info(f"收到消息：{message[:100]}...")
             logger.debug(f"完整消息：{message}")
@@ -182,12 +218,10 @@ class AgentFactory:
                     if not isinstance(item, (list, tuple)) or len(item) != 2:
                         logger.warning(f"无效的历史记录：{item}")
                         continue
-                    
                     role, content = item
                     if not isinstance(content, str) or not content:
                         logger.warning(f"无效的内容：{content}")
                         continue
-                    
                     if role == "human":
                         messages.append(HumanMessage(content=content))
                     elif role == "ai":
@@ -216,44 +250,81 @@ class AgentFactory:
                 for tool_call in response.tool_calls:
                     tool_name = tool_call.get('name')
                     tool_args = tool_call.get('args', {})
-                    
                     logger.info(f"执行工具：{tool_name}, 参数：{tool_args}")
                     
                     if tool_name == 'get_weather':
                         location = tool_args.get('location', '')
-                        
                         if not location:
                             location = self._extract_city(message)
-                            logger.info(f"从消息中提取城市：{location}")
-                        
+                        logger.info(f"从消息中提取城市：{location}")
                         if location:
                             from tools.weather_tool import get_weather_sync
                             logger.info(f"调用天气工具查询：{location}")
                             tool_result = get_weather_sync(location)
                             logger.info(f"天气工具返回结果：{tool_result}")
-                            
-                            # 将工具结果添加到对话中
-                            messages.append(AIMessage(content=f"正在查询{location}的天气..."))
+                            messages.append(AIMessage(content=f"正在查询{location}天气..."))
                             messages.append(ToolMessage(content=tool_result, tool_call_id=tool_call.get('id', '')))
-                            
-                            # 再次调用 LLM 获取最终回复
-                            logger.info("再次调用 LLM 获取最终回复...")
-                            final_response = self.llm.invoke(messages)
-                            logger.debug(f"最终回复内容：{str(final_response.content)[:200]}...")
-                            
-                            # 增加消息计数
-                            self.state.increment_message_count()
-                            
-                            # 恢复就绪状态
-                            if self.state.is_busy():
-                                self.state.set_ready(self.state.provider, self.state.model)
-                            
-                            return final_response.content
+                    
+                    elif tool_name == 'get_crypto_price':
+                        symbol = tool_args.get('symbol', 'BTCUSDT')
+                        logger.info(f"调用加密货币价格工具：{symbol}")
+                        from agent.tools.crypto_data import crypto_tool
+                        tool_result = crypto_tool.get_price(symbol)
+                        if tool_result['success']:
+                            result_text = f"{tool_result['symbol']}: ${tool_result['price']} ({tool_result['change_24h']}% 24h)"
                         else:
-                            return '汪！请告诉我你想查哪个城市的天气呀？比如"北京天气"或"上海天气"~ 🐕'
+                            result_text = f"获取失败：{tool_result['error']}"
+                        logger.info(f"加密货币价格结果：{result_text}")
+                        messages.append(AIMessage(content=f"正在查询{symbol}价格..."))
+                        messages.append(ToolMessage(content=result_text, tool_call_id=tool_call.get('id', '')))
+                    
+                    elif tool_name == 'analyze_crypto':
+                        symbol = tool_args.get('symbol', 'BTCUSDT')
+                        interval = tool_args.get('interval', '1d')
+                        logger.info(f"调用加密货币分析工具：{symbol} ({interval})")
+                        from agent.tools.crypto_data import crypto_tool
+                        from agent.tools.crypto_analysis import analysis_tool
+                        klines = crypto_tool.get_klines(symbol, interval, 100)
+                        if klines['success']:
+                            analysis = analysis_tool.analyze_trend(klines['klines'])
+                            if analysis['success']:
+                                result_text = f"📊分析完成：{analysis['trend']}, RSI={analysis['rsi']}"
+                            else:
+                                result_text = f"分析失败：{analysis['error']}"
+                        else:
+                            result_text = f"获取 K 线失败：{klines['error']}"
+                        logger.info(f"加密货币分析结果：{result_text}")
+                        messages.append(AIMessage(content=f"正在分析{symbol}走势..."))
+                        messages.append(ToolMessage(content=result_text, tool_call_id=tool_call.get('id', '')))
+                    
+                    else:
+                        logger.warning(f"未处理的工具：{tool_name}")
+                        continue
+                
+                # 工具调用完成后，再次调用 LLM 获取最终回复
+                logger.info("工具调用完成，再次调用 LLM...")
+                final_response = self.llm.invoke(messages)
+                logger.debug(f"最终回复内容：{str(final_response.content)[:200]}...")
+                
+                # 增加消息计数
+                self.state.increment_message_count()
+                
+                # 恢复就绪状态
+                if self.state.is_busy():
+                    self.state.set_ready(self.state.provider, self.state.model)
+                
+                return final_response.content
             
             # 没有工具调用，直接返回
             result = response.content
+            
+            # [后处理] 如果 LLM 没调工具，但用户问题明显需要工具，手动调用
+            if not hasattr(response, 'tool_calls') or not response.tool_calls:
+                manual_result = self._manual_tool_call(message)
+                if manual_result:
+                    logger.info(f"[后处理] 手动工具调用成功：{manual_result[:100]}...")
+                    result = manual_result
+            
             logger.info(f"返回结果：{result[:100]}...")
             
             # 增加消息计数
