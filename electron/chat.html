@@ -313,6 +313,8 @@
     
     // 语音录音相关
     let mediaRecorder = null;
+let lastRecordingBlob = null;  // 存储上一次的录音
+let lastRecordingUrl = null;   // 上一次的音频 URL
     let audioChunks = [];
     let isRecording = false;
     let recordingStartTime = 0;
@@ -333,6 +335,8 @@
         mediaRecorder.ondataavailable = (event) => {
           if (event.data.size > 0) {
             audioChunks.push(event.data);
+// 实时更新 lastRecordingBlob
+lastRecordingBlob = new Blob(audioChunks, { type: 'audio/webm' });
             console.log(`[语音] 录音数据块：${event.data.size} 字节`);
           }
         };
@@ -360,24 +364,89 @@
     
     // 处理录音 - 使用浏览器原生语音识别
     async function processRecording(audioBlob) {
-      // 简单方案：直接使用浏览器语音识别
-      // 如果需要更准确的识别，可以上传音频文件到服务端
-      console.log('[语音] 录音完成，大小:', audioBlob.size);
-      
-      // 由于浏览器限制，这里使用简单的方案：
-      // 1. 显示录音时长
-      // 2. 提示用户输入文字
-      const duration = (Date.now() - recordingStartTime) / 1000;
-      const placeholder = `[录音 ${duration.toFixed(1)}秒] `;
-      userInput.value = placeholder + userInput.value;
-      userInput.focus();
-      
-      // 简单方案：让用户自己修改文字后发送
-      console.log('[语音] 请使用输入法输入文字，或继续录音');
-    }
-    
-    // 点击语音按钮
-    async function toggleVoiceRecording() {
+	console.log('[录音] 录音完成，大小:', audioBlob.size);
+	
+	// [语音优化] 使用 Web Speech API 进行语音识别
+	const recognizedText = await recognizeSpeechFromBlob(audioBlob);
+	
+	const duration = (Date.now() - recordingStartTime) / 1000;
+	
+	if (recognizedText && recognizedText.trim()) {
+		console.log('[录音] 识别成功:', recognizedText);
+		addSystemMessage('🎤 识别结果："' + recognizedText + '"');
+		userInput.value = recognizedText;
+		setTimeout(() => {
+			sendMessage();
+		}, 500);
+	} else {
+		console.log('[录音] 识别失败');
+		const durationSec = duration.toFixed(1);
+		const placeholder = '[录音 ' + durationSec + '秒] ';
+		userInput.value = placeholder + userInput.value;
+		userInput.focus();
+		addSystemMessage('⚠️ 语音识别失败，请手动输入内容后发送');
+	}
+}
+
+// 语音识别辅助函数
+async function recognizeSpeechFromBlob(audioBlob) {
+	return new Promise((resolve, reject) => {
+		const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+		
+		if (!SpeechRecognition) {
+			console.log('[语音] 浏览器不支持 SpeechRecognition API');
+			resolve(null);
+			return;
+		}
+		
+		const recognition = new SpeechRecognition();
+		recognition.lang = 'zh-CN';
+		recognition.continuous = false;
+		recognition.interimResults = true;
+		
+		let finalTranscript = '';
+		
+		recognition.onstart = () => {
+			console.log('[语音] 开始识别...');
+		};
+		
+		recognition.onresult = (event) => {
+			let interimTranscript = '';
+			for (let i = event.resultIndex; i < event.results.length; i++) {
+				const transcript = event.results[i][0].transcript;
+				if (event.results[i].isFinal) {
+					finalTranscript += transcript;
+				} else {
+					interimTranscript += transcript;
+				}
+			}
+			console.log('[语音] 识别中:', finalTranscript + interimTranscript);
+		};
+		
+		recognition.onend = () => {
+			console.log('[语音] 识别结束');
+			resolve(finalTranscript || null);
+		};
+		
+		recognition.onerror = (event) => {
+			console.error('[语音] 识别错误:', event.error);
+			resolve(null);
+		};
+		
+		recognition.start();
+		
+		// 播放音频让浏览器识别
+		const audio = new Audio(URL.createObjectURL(audioBlob));
+		audio.play().catch(err => console.error('[语音] 播放失败:', err));
+		
+		setTimeout(() => {
+			try { recognition.stop(); } catch(e) {}
+			resolve(finalTranscript || null);
+		}, 10000);
+	});
+}
+
+toggleVoiceRecording() {
       console.log('[语音] 按钮点击，当前状态:', isRecording ? '录音中' : '未录音');
       
       if (!isRecording) {
@@ -669,6 +738,133 @@
     loadHistory();
     console.log('dogeAgent 聊天窗口已启动！');
     console.log('[语音] 点击麦克风按钮开始录音');
-  </script>
+  
+// 显示音频播放控制
+function showAudioControls(audioUrl, duration) {
+	const controlsHtml = `
+		<div class="audio-controls" style="margin: 10px; padding: 10px; background: rgba(255,255,255,0.9); border-radius: 8px;">
+			<p>🎤 录音完成 (${duration}秒)</p>
+			<div style="display: flex; gap: 10px; margin-top: 8px;">
+				<button onclick="playAudio('${audioUrl}')" style="padding: 6px 12px; background: #48bb78; color: white; border: none; border-radius: 4px; cursor: pointer;">▶ 播放</button>
+				<button onclick="reRecord()" style="padding: 6px 12px; background: #f56565; color: white; border: none; border-radius: 4px; cursor: pointer;">↻ 重录</button>
+				<button onclick="sendRecognizedText()" style="padding: 6px 12px; background: #4299e1; color: white; border: none; border-radius: 4px; cursor: pointer;">✓ 识别并发送</button>
+			</div>
+		</div>
+	`;
+	
+	// 添加到聊天窗口
+	const chatContainer = document.querySelector('.chat-container');
+	const tempDiv = document.createElement('div');
+	tempDiv.innerHTML = controlsHtml;
+	chatContainer.appendChild(tempDiv);
+	chatContainer.scrollTop = chatContainer.scrollHeight;
+}
+
+// 播放音频
+function playAudio(url) {
+	const audio = new Audio(url);
+	audio.play();
+	console.log('[音频] 开始播放');
+}
+
+// 重录
+function reRecord() {
+	console.log('[录音] 重新录制');
+	// 清除输入框
+	userInput.value = '';
+	// 移除控制条
+	const controls = document.querySelector('.audio-controls');
+	if (controls) controls.remove();
+	// 重新开始录音
+	toggleVoiceRecording();
+}
+
+// 识别并发送
+async function sendRecognizedText() {
+	if (!lastRecordingBlob) {
+		console.error('[错误] 没有录音数据');
+		return;
+	}
+	
+	console.log('[录音] 开始识别...');
+	const recognizedText = await recognizeSpeechFromBlob(lastRecordingBlob);
+	
+	if (recognizedText && recognizedText.trim()) {
+		console.log('[录音] 识别成功:', recognizedText);
+		addSystemMessage('🎤 识别结果："' + recognizedText + '"');
+		userInput.value = recognizedText;
+		// 移除控制条
+		const controls = document.querySelector('.audio-controls');
+		if (controls) controls.remove();
+		// 发送
+		setTimeout(() => {
+			sendMessage();
+		}, 500);
+	} else {
+		console.log('[录音] 识别失败');
+		addSystemMessage('⚠️ 语音识别失败，请重试或手动输入');
+	}
+}
+
+// 语音识别
+async function recognizeSpeechFromBlob(audioBlob) {
+	return new Promise((resolve, reject) => {
+		const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+		
+		if (!SpeechRecognition) {
+			console.log('[语音] 浏览器不支持 SpeechRecognition API');
+			resolve(null);
+			return;
+		}
+		
+		const recognition = new SpeechRecognition();
+		recognition.lang = 'zh-CN';
+		recognition.continuous = false;
+		recognition.interimResults = true;
+		
+		let finalTranscript = '';
+		
+		recognition.onstart = () => {
+			console.log('[语音] 开始识别...');
+		};
+		
+		recognition.onresult = (event) => {
+			let interimTranscript = '';
+			for (let i = event.resultIndex; i < event.results.length; i++) {
+				const transcript = event.results[i][0].transcript;
+				if (event.results[i].isFinal) {
+					finalTranscript += transcript;
+				} else {
+					interimTranscript += transcript;
+				}
+			}
+			console.log('[语音] 识别中:', finalTranscript + interimTranscript);
+		};
+		
+		recognition.onend = () => {
+			console.log('[语音] 识别结束');
+			resolve(finalTranscript || null);
+		};
+		
+		recognition.onerror = (event) => {
+			console.error('[语音] 识别错误:', event.error);
+			resolve(null);
+		};
+		
+		recognition.start();
+		
+		// 播放音频
+		const audio = new Audio(URL.createObjectURL(audioBlob));
+		audio.play().catch(err => console.error('[语音] 播放失败:', err));
+		
+		// 超时
+		setTimeout(() => {
+			try { recognition.stop(); } catch(e) {}
+			resolve(finalTranscript || null);
+		}, 10000);
+	});
+}
+
+</script>
 </body>
 </html>
