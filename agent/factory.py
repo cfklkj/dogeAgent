@@ -303,8 +303,20 @@ class AgentFactory:
                 
                 # 工具调用完成后，再次调用 LLM 获取最终回复
                 logger.info("工具调用完成，再次调用 LLM...")
-                final_response = self.llm.invoke(messages)
-                logger.debug(f"最终回复内容：{str(final_response.content)[:200]}...")
+                try:
+                    final_response = self.llm.invoke(messages)
+                    logger.debug(f"最终回复内容：{str(final_response.content)[:200]}...")
+                    
+                    # 验证返回结果
+                    if not final_response or not hasattr(final_response, 'content') or not final_response.content:
+                        logger.warning("[修复] 最终回复为空，使用工具结果")
+                        # 如果 LLM 没返回有效内容，直接使用工具调用结果
+                        return "工具调用成功，但 LLM 未生成回复。请稍后重试。"
+                    
+                    result = str(final_response.content)
+                except Exception as e:
+                    logger.error(f"LLM 调用失败：{e}", exc_info=True)
+                    result = f"工具调用成功，但生成回复失败：{str(e)}"
                 
                 # 增加消息计数
                 self.state.increment_message_count()
@@ -313,7 +325,7 @@ class AgentFactory:
                 if self.state.is_busy():
                     self.state.set_ready(self.state.provider, self.state.model)
                 
-                return final_response.content
+                return result
             
             # 没有工具调用，直接返回
             result = response.content
